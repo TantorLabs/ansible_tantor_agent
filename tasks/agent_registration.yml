@@ -1,0 +1,31 @@
+- name: Check Agent state
+  local_action:
+    module: ansible.builtin.uri
+    url: "{{ tantor_agent_url }}/integration/agents/register/check"
+    body_format: json
+    body:
+      host: "{{ tantor_agent_host_ip }}"
+    return_content: true
+    validate_certs: "{{ tantor_agent_validate_certs }}"
+    method: "POST"
+    headers:
+      Authorization: "Bearer {{ tantor_agent_token }}"
+    status_code: [422, 200]
+  become: false
+  register: response
+
+
+- name: Register agent managed by Patroni
+  shell: pmaagent register --access-token "{{ tantor_agent_token }}" --db-user {{ tantor_agent_db_user }} --db-password {{ tantor_agent_db_password }} --host {{ tantor_agent_host_ip }} --patroni-endpoint "{{ tantor_agent_host_ip }}:8008" --patroni-user {{ tantor_agent_patroni_user }} --patroni-password {{ tantor_agent_patroni_password }} --type {{ tantor_agent_db_type }} --workspace-name {{ tantor_agent_workspace_name }} --nats-endpoint {{ tantor_agent_nats_endpoint }}
+  register: install_result
+  notify: Restart pmaagent
+  failed_when: install_result.stderr != ""
+  when: response.json.code != 'WORKSPACE.AGENT.CHECK.EXISTS' and tantor_agent_managed_patroni is true
+
+- name: Register agent without Patroni
+  shell: pmaagent register --access-token "{{ tantor_agent_token }}" --db-user {{ tantor_agent_db_user }} --db-password {{ tantor_agent_db_password }} --host {{ tantor_agent_host_ip }} --type {{ tantor_agent_db_type }} --workspace-name {{ tantor_agent_workspace_name }} --nats-endpoint {{ tantor_agent_nats_endpoint }}
+  register: install_result
+  notify: Restart pmaagent
+  failed_when: install_result.stderr != ""
+  when: response.json.code != 'WORKSPACE.AGENT.CHECK.EXISTS' and tantor_agent_managed_patroni is false
+

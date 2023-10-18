@@ -1,0 +1,4 @@
+- name: Delete package pmaagent
+  ansible.builtin.package:
+    name: "pmaagent"
+    state: absent

@@ -1,0 +1,16 @@
+# handlers file for tantor_plaftorm
+
+- name: Cleanup files from filesystem
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  with_items:
+    - /tmp/pmaagent.deb
+    - /tmp/pmaagent.rpm
+    - /tmp/pmaagent.log
+
+- name: Restart pmaagent
+  ansible.builtin.systemd:
+    name: pmaagent
+    daemon_reload: true
+    state: restarted
