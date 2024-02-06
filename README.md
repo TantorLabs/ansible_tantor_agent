@@ -60,6 +60,10 @@ tantor_agent_workspace_name: test
 ```
 the name of the workspace to which the database instance is added
 ```
+tantor_agent_environment: SERVER
+```
+environment where the DBMS is running (SERVER, CONTAINER)
+```
 tantor_agent_db_type: PostgreSQL
 ```
 Database type managed by the platform agent (PostgreSQL, TantorDB)
@@ -97,6 +101,16 @@ this DBMS is managed by Patroni
 tantor_agent_patroni_ssl: false
 ```
 type of connection to Patroni API
+
+```
+tantor_agent_patroni_host: '1.2.3.4'
+```
+connection ip address to Patroni API. The default address is used from the variable tantor_agent_host_ip
+```
+tantor_agent_patroni_port: 8008
+
+```
+connection port to Patroni API
 
 ```
 tantor_agent_patroni_user: test_user
@@ -137,6 +151,7 @@ Inside host_vars/pg01.yml:
 ```
 tantor_agent_host_ip: "192.168.0.1"
 tantor_agent_workspace_name: test
+tantor_agent_environment: SERVER
 tantor_agent_db_type: PostgreSQL
 tantor_agent_host_port: 5432
 tantor_agent_db_name: postgres
@@ -165,6 +180,7 @@ Inside host_vars/pg01.yml:
 ```
 tantor_agent_host_ip: "192.168.0.1"
 tantor_agent_workspace_name: test
+tantor_agent_environment: SERVER
 tantor_agent_db_type: PostgreSQL
 tantor_agent_host_port: 5432
 tantor_agent_db_name: postgres

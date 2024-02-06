@@ -22,10 +22,11 @@ tantor_agent_nats_endpoint: ''
 tantor_agent_install_mode: local
 
 # the version of the agent to be installed, only applies to installing an agent from the repository
-tantor_agent_version: 3.2.0
+tantor_agent_version: 3.3.0
 
 # agent settings for registration in the Tantor Platform
 tantor_agent_workspace_name: test
+tantor_agent_environment: SERVER
 tantor_agent_db_type: PostgreSQL
 tantor_agent_host_ip: ''
 tantor_agent_host_port: 5432
@@ -34,5 +35,7 @@ tantor_agent_db_password: pma_user
 tantor_agent_db_user: pma_user
 tantor_agent_managed_patroni: false
 tantor_agent_patroni_ssl: false
+# tantor_agent_patroni_host: ''
+tantor_agent_patroni_port: 8008
 tantor_agent_patroni_user: ''
 tantor_agent_patroni_password: ''

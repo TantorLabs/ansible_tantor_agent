@@ -21,18 +21,20 @@
     state: present
   when: ansible_os_family in ("Debian", "Astra Linux")
 
-- name: Install Apt package pmaagent
+- name: Install apt package pmaagent
   ansible.builtin.apt:
     name: "pmaagent={{tantor_agent_version}}"
     update_cache: yes
+    allow_downgrade: true
     state: present
   notify: Restart pmaagent
   when: ansible_os_family in ("Debian", "Astra Linux")
 
-- name: Install Yum package pmaagent
+- name: Install yum package pmaagent
   ansible.builtin.yum:
     name: "pmaagent={{tantor_agent_version}}"
     update_cache: yes
+    allow_downgrade: true
     state: present
   notify: Restart pmaagent
   when: ansible_os_family in ("RedHat")

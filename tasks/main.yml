@@ -6,6 +6,14 @@
 - include_tasks: install_agent_local.yml
   when: tantor_agent_install_mode == 'local'
 
+- name: Check version of agent
+  command: pmaagent version -r
+  register: agent_version
+
+- name: show
+  debug:
+    msg: "{{ agent_version }}"
+
 - include_tasks: agent_deregister.yml
   when: tantor_agent_install_mode in ('purge', 'deregister')
 

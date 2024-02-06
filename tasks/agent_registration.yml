@@ -14,18 +14,62 @@
   become: false
   register: response
 
+- block:
+  - name: Register agent managed by Patroni | version_agent <= 3.2.2
+    shell: pmaagent register --access-token '{{ tantor_agent_token }}' --db-user '{{ tantor_agent_db_user }}' --db-password '{{ tantor_agent_db_password }}' --host '{{ tantor_agent_host_ip }}' --patroni-endpoint '{{ tantor_agent_patroni_host| default(tantor_agent_host_ip) }}:{{ tantor_agent_patroni_port }}' --patroni-user '{{ tantor_agent_patroni_user }}' --patroni-password '{{ tantor_agent_patroni_password }}' --type '{{ tantor_agent_db_type }}' --workspace-name '{{ tantor_agent_workspace_name }}' --nats-endpoint '{{ tantor_agent_nats_endpoint }}'
+    register: install_result
+    notify: Restart pmaagent
+    failed_when: install_result.stderr != ""
+    when: 
+      - tantor_agent_managed_patroni is true
 
-- name: Register agent managed by Patroni
-  shell: pmaagent register --access-token "{{ tantor_agent_token }}" --db-user {{ tantor_agent_db_user }} --db-password {{ tantor_agent_db_password }} --host {{ tantor_agent_host_ip }} --patroni-endpoint "{{ tantor_agent_host_ip }}:8008" --patroni-user {{ tantor_agent_patroni_user }} --patroni-password {{ tantor_agent_patroni_password }} --type {{ tantor_agent_db_type }} --workspace-name {{ tantor_agent_workspace_name }} --nats-endpoint {{ tantor_agent_nats_endpoint }}
-  register: install_result
-  notify: Restart pmaagent
-  failed_when: install_result.stderr != ""
-  when: response.json.code != 'WORKSPACE.AGENT.CHECK.EXISTS' and tantor_agent_managed_patroni is true
+  - name: Register agent without Patroni | version_agent <= 3.2.2
+    shell: pmaagent register --access-token '{{ tantor_agent_token }}' --db-user '{{ tantor_agent_db_user }}' --db-password '{{ tantor_agent_db_password }}' --host '{{ tantor_agent_host_ip }}' --type '{{ tantor_agent_db_type }}' --workspace-name '{{ tantor_agent_workspace_name }}' --nats-endpoint '{{ tantor_agent_nats_endpoint }}'
+    register: install_result
+    notify: Restart pmaagent
+    failed_when: install_result.stderr != ""
+    when: 
+      - tantor_agent_managed_patroni is false
 
-- name: Register agent without Patroni
-  shell: pmaagent register --access-token "{{ tantor_agent_token }}" --db-user {{ tantor_agent_db_user }} --db-password {{ tantor_agent_db_password }} --host {{ tantor_agent_host_ip }} --type {{ tantor_agent_db_type }} --workspace-name {{ tantor_agent_workspace_name }} --nats-endpoint {{ tantor_agent_nats_endpoint }}
-  register: install_result
-  notify: Restart pmaagent
-  failed_when: install_result.stderr != ""
-  when: response.json.code != 'WORKSPACE.AGENT.CHECK.EXISTS' and tantor_agent_managed_patroni is false
+  when:
+      - response.json.code != 'WORKSPACE.AGENT.CHECK.EXISTS'
+      - "agent_version.stdout is version('3.2.2', '<=', version_type='semver')"
+
+
+- block:
+  - name: Register agent without instance | version_agent >= 3.3.0
+    shell: pmaagent register --access-token '{{ tantor_agent_token }}' --host '{{ tantor_agent_host_ip }}' --workspace-name '{{ tantor_agent_workspace_name }}' --endpoint '{{ tantor_agent_nats_endpoint }}'
+    register: install_result
+    notify: Restart pmaagent
+    failed_when: install_result.stderr != ""
+    when: 
+      - response.json.code != 'WORKSPACE.AGENT.CHECK.EXISTS'
+      - "agent_version.stdout is version('3.3.0', '>=', version_type='semver')"
+
+  - name: Instance add with Patroni | version_agent >= 3.3.0
+    shell: pmaagent instances add --name '{{ tantor_agent_host_ip }}' --environment '{{ tantor_agent_environment }}' --type '{{ tantor_agent_db_type }}' --db-host '{{ tantor_agent_host_ip }}' --db-port '{{ tantor_agent_host_port }}' --db-user '{{ tantor_agent_db_user }}' --db-pass '{{ tantor_agent_db_password }}' --patroni-host '{{ tantor_agent_patroni_host| default(tantor_agent_host_ip) }}' --patroni-port '{{ tantor_agent_patroni_port }}' {% if tantor_agent_patroni_ssl %}--patroni-ssl{%endif%} --patroni-user '{{ tantor_agent_patroni_user }}' --patroni-password '{{ tantor_agent_patroni_password }}' --confirm
+    register: install_result
+    notify: Restart pmaagent
+    failed_when: 
+      - install_result.rc != 0
+      - "install_result.stderr is not regex('Instance with the provided host .* and port .* exists')"
+    changed_when:
+      - "install_result.stdout is regex ('Instance .* has been added successfully')"
+    when: 
+      - tantor_agent_managed_patroni is true
+
+  - name: Instance add without Patroni | version_agent >= 3.3.0
+    shell: pmaagent instances add --name '{{ tantor_agent_host_ip }}' --environment '{{ tantor_agent_environment }}' --type '{{ tantor_agent_db_type }}' --db-host '{{ tantor_agent_host_ip }}' --db-port '{{ tantor_agent_host_port }}' --db-user '{{ tantor_agent_db_user }}' --db-pass '{{ tantor_agent_db_password }}' --confirm
+    register: install_result
+    notify: Restart pmaagent
+    failed_when: 
+      - install_result.rc != 0
+      - "install_result.stderr is not regex('Instance with the provided host .* and port .* exists')"
+    changed_when:
+      - "install_result.stdout is regex ('Instance .* has been added successfully')"
+    when: 
+      - tantor_agent_managed_patroni is false
+
+  when:
+    - "agent_version.stdout is version('3.3.0', '>=', version_type='semver')"
 
