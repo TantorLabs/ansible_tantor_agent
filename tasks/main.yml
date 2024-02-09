@@ -10,10 +10,6 @@
   command: pmaagent version -r
   register: agent_version
 
-- name: show
-  debug:
-    msg: "{{ agent_version }}"
-
 - include_tasks: agent_deregister.yml
   when: tantor_agent_install_mode in ('purge', 'deregister')
 
