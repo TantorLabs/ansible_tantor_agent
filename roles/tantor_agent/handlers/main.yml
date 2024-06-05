@@ -1,4 +1,4 @@
-# handlers file for tantor_plaftorm
+# handlers file for plaftorm
 
 - name: Cleanup files from filesystem
   ansible.builtin.file:

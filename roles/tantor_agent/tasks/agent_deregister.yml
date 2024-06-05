@@ -1,0 +1,23 @@
+- name: Check Agent state
+  ansible.builtin.uri:
+    url: "{{ platform_url }}/integration/agents/register/check"
+    body_format: json
+    body:
+      host: "{{ agent_host_ip }}"
+    return_content: true
+    validate_certs: "{{ platform_validate_certs }}"
+    method: "POST"
+    headers:
+      Authorization: "Bearer {{ platform_token }}"
+    status_code: [422, 200]
+  become: false
+  register: response
+  delegate_to: localhost
+
+- name: Deregister agent
+  ansible.builtin.command: pmaagent deregister -y
+  register: deregister_result
+  failed_when: deregister_result.stderr != ""
+  changed_when:
+    - "deregister_result.stdout is regex ('Agent successfully deregistered')"
+  when: response.json.code == 'WORKSPACE.AGENT.CHECK.EXISTS'

@@ -1,0 +1,12 @@
+galaxy_info:
+  author: Aleksandr Lychangin, Maxim Bagirov
+  description: Ansible role for manage life cycle of tantor platform agent
+  company: Tantor Labs
+
+  license: license BSD
+
+  min_ansible_version: "2.12"
+
+  galaxy_tags: []
+
+dependencies: []

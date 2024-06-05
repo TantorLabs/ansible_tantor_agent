@@ -1,27 +1,22 @@
 - name: Download deb package
   ansible.builtin.get_url:
-    url: "{{ tantor_agent_url }}:8443/packages/pmaagent.deb"
+    url: "{{ platform_url }}:{{ platform_repo_port }}/packages/pmaagent.deb"
     dest: /tmp/pmaagent.deb
-    mode: 0644
-    validate_certs: "{{ tantor_agent_validate_certs }}"
+    mode: '0644'
+    validate_certs: "{{ platform_validate_certs }}"
   changed_when: true
   notify: Cleanup files from filesystem
   when: ansible_os_family in ("Debian", "Astra Linux")
 
 - name: Download rpm package
   ansible.builtin.get_url:
-    url: "{{ tantor_agent_url }}:8443/packages/pmaagent.rpm"
+    url: "{{ platform_url }}:{{ platform_repo_port }}/packages/pmaagent.rpm"
     dest: /tmp/pmaagent.rpm
-    mode: 0644
-    validate_certs: "{{ tantor_agent_validate_certs }}"
+    mode: '0644'
+    validate_certs: "{{ platform_validate_certs }}"
   changed_when: true
   notify: Cleanup files from filesystem
   when: ansible_os_family in ("RedHat")
-
-- name: Install require package for installing pmaagent
-  ansible.builtin.package:
-    name: xz-utils
-    state: present
 
 - name: Install package pmaagent
   ansible.builtin.apt:

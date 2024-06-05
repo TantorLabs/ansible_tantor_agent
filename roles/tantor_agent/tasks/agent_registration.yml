@@ -1,0 +1,146 @@
+- name: Check Agent state
+  ansible.builtin.uri:
+    url: "{{ platform_url }}/integration/agents/register/check"
+    body_format: json
+    body:
+      host: "{{ agent_host_ip }}"
+    return_content: true
+    validate_certs: "{{ platform_validate_certs }}"
+    method: "POST"
+    headers:
+      Authorization: "Bearer {{ platform_token }}"
+    status_code: [422, 200]
+  become: false
+  register: response
+  delegate_to: localhost
+
+- name: Block for DB preparation
+  block:
+    - name: Check if postgresql node is in master state
+      ansible.builtin.command:
+        cmd: su - postgres -c "psql -A -t -d postgres -c \"SELECT pg_is_in_recovery();\""
+      changed_when: false
+      register: psql_node_status
+
+    - name: Create pma role
+      community.postgresql.postgresql_user:
+        login_host: localhost
+        db: postgres
+        name: "{{ agent_db_user }}"
+        password: "{{ agent_db_password }}"
+        encrypted: true
+        conn_limit: 5
+        role_attr_flags: SUPERUSER
+        state: present
+        port: "5432"
+      become: true
+      become_user: postgres
+      when: psql_node_status.stdout == 'f'
+
+- name: Block for agent less or equial to 3.2.2
+  when:
+    - response.json.code != 'WORKSPACE.AGENT.CHECK.EXISTS'
+    - "agent_version.stdout is version('3.2.2', '<=', version_type='semver')"
+  block:
+    - name: Register agent managed by Patroni | version_agent <= 3.2.2
+      ansible.builtin.command: |
+        pmaagent register
+        --access-token '{{ platform_token }}'
+        --db-user '{{ agent_db_user }}'
+        --db-password '{{ agent_db_password }}'
+        --host '{{ agent_host_ip }}'
+        --patroni-endpoint '{{ agent_patroni_host | default(agent_host_ip) }}:{{ agent_patroni_port }}'
+        --patroni-user '{{ agent_patroni_user }}'
+        --patroni-password '{{ agent_patroni_password }}'
+        --type '{{ agent_db_type }}'
+        --workspace-name '{{ platform_workspace_name }}'
+        --nats-endpoint '{{ platform_nats_endpoint }}'
+      register: install_result
+      notify: Restart pmaagent
+      failed_when: install_result.stderr != ""
+      changed_when:
+        - "install_result.stdout is regex ('Agent successfully registered')"
+      when:
+        - agent_managed_patroni is true
+
+    - name: Register agent without Patroni | version_agent <= 3.2.2
+      ansible.builtin.command: |
+        pmaagent register
+        --access-token '{{ platform_token }}'
+        --db-user '{{ agent_db_user }}'
+        --db-password '{{ agent_db_password }}'
+        --host '{{ agent_host_ip }}'
+        --type '{{ agent_db_type }}'
+        --workspace-name '{{ platform_workspace_name }}'
+        --nats-endpoint '{{ platform_nats_endpoint }}'
+      register: install_result
+      notify: Restart pmaagent
+      failed_when: install_result.stderr != ""
+      changed_when:
+        - "install_result.stdout is regex ('Agent successfully registered')"
+      when:
+        - agent_managed_patroni is false
+
+- name: Block for agent more or equal to 3.3.0
+  when:
+    - "agent_version.stdout is version('3.3.0', '>=', version_type='semver')"
+    - response.json.code != 'WORKSPACE.AGENT.CHECK.EXISTS'
+  block:
+    - name: Register agent | version_agent >= 3.3.0
+      ansible.builtin.command: |
+        pmaagent register
+        --access-token '{{ platform_token }}'
+        --host '{{ agent_host_ip }}'
+        --workspace-name '{{ platform_workspace_name }}'
+        --endpoint '{{ platform_nats_endpoint }}'
+      register: install_result
+      notify: Restart pmaagent
+      failed_when: install_result.stderr != ""
+      changed_when:
+        - "install_result.stdout is regex ('Agent successfully registered')"
+
+    - name: Instance add with Patroni | version_agent >= 3.3.0
+      ansible.builtin.command: |
+        pmaagent instances add
+        --name '{{ agent_host_ip }}'
+        --environment '{{ agent_environment }}'
+        --type '{{ agent_db_type }}'
+        --db-host '{{ agent_host_ip }}'
+        --db-port '{{ agent_host_port }}'
+        --db-user '{{ agent_db_user }}'
+        --db-pass '{{ agent_db_password }}'
+        --patroni-host '{{ agent_patroni_host | default(agent_host_ip) }}'
+        --patroni-port '{{ agent_patroni_port }}' {% if agent_patroni_ssl %}--patroni-ssl{%endif %}
+        --patroni-user '{{ agent_patroni_user }}'
+        --patroni-password '{{ agent_patroni_password }}'
+        --confirm
+      register: install_result
+      notify: Restart pmaagent
+      failed_when:
+        - install_result.rc != 0
+        - "install_result.stderr is not regex('Instance with the provided host .* and port .* exists')"
+        - "install_result.stderr is not regex('Instance with the provided port .* exists')"
+      changed_when:
+        - "install_result.stdout is regex ('Instance .* has been added successfully')"
+
+    - name: Instance add without Patroni | version_agent >= 3.3.0
+      ansible.builtin.command: |
+        pmaagent instances add
+        --name '{{ agent_host_ip }}'
+        --environment '{{ agent_environment }}'
+        --type '{{ agent_db_type }}'
+        --db-host '{{ agent_host_ip }}'
+        --db-port '{{ agent_host_port }}'
+        --db-user '{{ agent_db_user }}'
+        --db-pass '{{ agent_db_password }}'
+        --confirm
+      register: install_result
+      notify: Restart pmaagent
+      failed_when:
+        - install_result.rc != 0
+        - "install_result.stderr is not regex('Instance with the provided host .* and port .* exists')"
+        - "install_result.stderr is not regex('Instance with the provided port .* exists')"
+      changed_when:
+        - "install_result.stdout is regex ('Instance .* has been added successfully')"
+      when:
+        - agent_managed_patroni is false
