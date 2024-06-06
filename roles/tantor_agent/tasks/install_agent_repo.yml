@@ -12,7 +12,7 @@
     baseurl: https://{{ agent_repo }}/repository/yum-packages/
     gpgcheck: true
     gpgkey: https://{{ agent_repo_key }}/tantorlabs.ru.asc
-  when: ansible_os_family in ("RedHat")
+  when: (ansible_distribution == "RED") or (ansible_os_family in ("RedHat"))
 
 - name: Install Apt repo
   ansible.builtin.apt_repository:
@@ -32,9 +32,9 @@
 
 - name: Install yum package pmaagent
   ansible.builtin.yum:
-    name: "pmaagent={{ agent_version }}"
+    name: "pmaagent-{{ agent_version }}"
     update_cache: true
     allow_downgrade: true
     state: present
   notify: Restart pmaagent
-  when: ansible_os_family in ("RedHat")
+  when: (ansible_distribution == "RED") or (ansible_os_family in ("RedHat"))

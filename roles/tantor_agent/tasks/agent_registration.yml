@@ -43,6 +43,8 @@
     - "agent_version.stdout is version('3.2.2', '<=', version_type='semver')"
   block:
     - name: Register agent managed by Patroni | version_agent <= 3.2.2
+      when:
+        - agent_managed_patroni is true
       ansible.builtin.command: |
         pmaagent register
         --access-token '{{ platform_token }}'
@@ -60,10 +62,10 @@
       failed_when: install_result.stderr != ""
       changed_when:
         - "install_result.stdout is regex ('Agent successfully registered')"
-      when:
-        - agent_managed_patroni is true
 
     - name: Register agent without Patroni | version_agent <= 3.2.2
+      when:
+        - agent_managed_patroni is false
       ansible.builtin.command: |
         pmaagent register
         --access-token '{{ platform_token }}'
@@ -78,8 +80,6 @@
       failed_when: install_result.stderr != ""
       changed_when:
         - "install_result.stdout is regex ('Agent successfully registered')"
-      when:
-        - agent_managed_patroni is false
 
 - name: Block for agent more or equal to 3.3.0
   when:
@@ -100,6 +100,8 @@
         - "install_result.stdout is regex ('Agent successfully registered')"
 
     - name: Instance add with Patroni | version_agent >= 3.3.0
+      when:
+        - agent_managed_patroni is true
       ansible.builtin.command: |
         pmaagent instances add
         --name '{{ agent_host_ip }}'
@@ -124,6 +126,8 @@
         - "install_result.stdout is regex ('Instance .* has been added successfully')"
 
     - name: Instance add without Patroni | version_agent >= 3.3.0
+      when:
+        - agent_managed_patroni is false
       ansible.builtin.command: |
         pmaagent instances add
         --name '{{ agent_host_ip }}'
@@ -142,5 +146,3 @@
         - "install_result.stderr is not regex('Instance with the provided port .* exists')"
       changed_when:
         - "install_result.stdout is regex ('Instance .* has been added successfully')"
-      when:
-        - agent_managed_patroni is false

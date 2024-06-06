@@ -5,6 +5,13 @@
     state: present
 
 - name: Install require package for installing pmaagent
+  when: ansible_os_family in ("Debian", "Astra Linux")
   ansible.builtin.package:
     name: xz-utils
+    state: present
+
+- name: Install require package for installing pmaagent
+  when: (ansible_distribution == "RED") or (ansible_os_family in ("RedHat"))
+  ansible.builtin.package:
+    name: xz
     state: present
