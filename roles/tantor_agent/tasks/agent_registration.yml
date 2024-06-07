@@ -3,7 +3,7 @@
     url: "{{ platform_url }}/integration/agents/register/check"
     body_format: json
     body:
-      host: "{{ agent_host_ip }}"
+      host: "{{ database_ip }}"
     return_content: true
     validate_certs: "{{ platform_validate_certs }}"
     method: "POST"
@@ -14,18 +14,30 @@
   register: response
   delegate_to: localhost
 
-- name: Block for DB preparation
+
+- name: Block for DB preparation (without local trust connection)
+  when:
+    - (database_user is defined) and (database_user is defined != "")
+    - (database_password is defined) and (database_password != "")
   block:
-    - name: Check if postgresql node is in master state
-      ansible.builtin.command:
-        cmd: su - postgres -c "psql -A -t -d postgres -c \"SELECT pg_is_in_recovery();\""
+    - name: Check if postgresql node is in master state (without local trust connection)
+      become: true
+      become_user: postgres
+      community.postgresql.postgresql_query:
+        db: "{{ database_name }}"
+        query: SELECT pg_is_in_recovery();
+        login_host: localhost
+        login_user: "{{ database_user }}"
+        login_password: "{{ database_password }}"
       changed_when: false
       register: psql_node_status
 
-    - name: Create pma role
+    - name: Create pma role (without local trust connection)
       community.postgresql.postgresql_user:
         login_host: localhost
-        db: postgres
+        login_user: "{{ database_user }}"
+        login_password: "{{ database_password }}"
+        db: "{{ database_name }}"
         name: "{{ agent_db_user }}"
         password: "{{ agent_db_password }}"
         encrypted: true
@@ -35,7 +47,37 @@
         port: "5432"
       become: true
       become_user: postgres
-      when: psql_node_status.stdout == 'f'
+      when: not psql_node_status.query_result.0.pg_is_in_recovery
+
+- name: Block for DB preparation (with local trust connection)
+  when:
+    - (database_user is not defined) or (database_user == "")
+    - (database_password is not defined) or (database_password == "")
+  block:
+    - name: Check if postgresql node is in master state (with local trust connection)
+      become: true
+      become_user: postgres
+      community.postgresql.postgresql_query:
+        db: "{{ database_name }}"
+        query: SELECT pg_is_in_recovery();
+        login_host: localhost
+      changed_when: false
+      register: psql_node_status
+
+    - name: Create pma role (with local trust connection))
+      community.postgresql.postgresql_user:
+        login_host: localhost
+        db: "{{ database_name }}"
+        name: "{{ agent_db_user }}"
+        password: "{{ agent_db_password }}"
+        encrypted: true
+        conn_limit: 5
+        role_attr_flags: SUPERUSER
+        state: present
+        port: "5432"
+      become: true
+      become_user: postgres
+      when: not psql_node_status.query_result.0.pg_is_in_recovery
 
 - name: Block for agent less or equial to 3.2.2
   when:
@@ -44,16 +86,16 @@
   block:
     - name: Register agent managed by Patroni | version_agent <= 3.2.2
       when:
-        - agent_managed_patroni is true
+        - database_managed_patroni is true
       ansible.builtin.command: |
         pmaagent register
         --access-token '{{ platform_token }}'
         --db-user '{{ agent_db_user }}'
         --db-password '{{ agent_db_password }}'
-        --host '{{ agent_host_ip }}'
-        --patroni-endpoint '{{ agent_patroni_host | default(agent_host_ip) }}:{{ agent_patroni_port }}'
-        --patroni-user '{{ agent_patroni_user }}'
-        --patroni-password '{{ agent_patroni_password }}'
+        --host '{{ database_ip }}'
+        --patroni-endpoint '{{ database_patroni_host | default(database_ip) }}:{{ database_patroni_port }}'
+        --patroni-user '{{ database_patroni_user }}'
+        --patroni-password '{{ database_patroni_password }}'
         --type '{{ agent_db_type }}'
         --workspace-name '{{ platform_workspace_name }}'
         --nats-endpoint '{{ platform_nats_endpoint }}'
@@ -65,13 +107,13 @@
 
     - name: Register agent without Patroni | version_agent <= 3.2.2
       when:
-        - agent_managed_patroni is false
+        - database_managed_patroni is false
       ansible.builtin.command: |
         pmaagent register
         --access-token '{{ platform_token }}'
         --db-user '{{ agent_db_user }}'
         --db-password '{{ agent_db_password }}'
-        --host '{{ agent_host_ip }}'
+        --host '{{ database_ip }}'
         --type '{{ agent_db_type }}'
         --workspace-name '{{ platform_workspace_name }}'
         --nats-endpoint '{{ platform_nats_endpoint }}'
@@ -90,7 +132,7 @@
       ansible.builtin.command: |
         pmaagent register
         --access-token '{{ platform_token }}'
-        --host '{{ agent_host_ip }}'
+        --host '{{ database_ip }}'
         --workspace-name '{{ platform_workspace_name }}'
         --endpoint '{{ platform_nats_endpoint }}'
       register: install_result
@@ -101,20 +143,20 @@
 
     - name: Instance add with Patroni | version_agent >= 3.3.0
       when:
-        - agent_managed_patroni is true
+        - database_managed_patroni is true
       ansible.builtin.command: |
         pmaagent instances add
-        --name '{{ agent_host_ip }}'
+        --name '{{ database_ip }}'
         --environment '{{ agent_environment }}'
         --type '{{ agent_db_type }}'
-        --db-host '{{ agent_host_ip }}'
-        --db-port '{{ agent_host_port }}'
+        --db-host '{{ database_ip }}'
+        --db-port '{{ database_port }}'
         --db-user '{{ agent_db_user }}'
         --db-pass '{{ agent_db_password }}'
-        --patroni-host '{{ agent_patroni_host | default(agent_host_ip) }}'
-        --patroni-port '{{ agent_patroni_port }}' {% if agent_patroni_ssl %}--patroni-ssl{%endif %}
-        --patroni-user '{{ agent_patroni_user }}'
-        --patroni-password '{{ agent_patroni_password }}'
+        --patroni-host '{{ database_patroni_host | default(database_ip) }}'
+        --patroni-port '{{ database_patroni_port }}' {% if database_patroni_ssl %}--patroni-ssl{%endif %}
+        --patroni-user '{{ database_patroni_user }}'
+        --patroni-password '{{ database_patroni_password }}'
         --confirm
       register: install_result
       notify: Restart pmaagent
@@ -127,14 +169,14 @@
 
     - name: Instance add without Patroni | version_agent >= 3.3.0
       when:
-        - agent_managed_patroni is false
+        - database_managed_patroni is false
       ansible.builtin.command: |
         pmaagent instances add
-        --name '{{ agent_host_ip }}'
+        --name '{{ database_ip }}'
         --environment '{{ agent_environment }}'
         --type '{{ agent_db_type }}'
-        --db-host '{{ agent_host_ip }}'
-        --db-port '{{ agent_host_port }}'
+        --db-host '{{ database_ip }}'
+        --db-port '{{ database_port }}'
         --db-user '{{ agent_db_user }}'
         --db-pass '{{ agent_db_password }}'
         --confirm

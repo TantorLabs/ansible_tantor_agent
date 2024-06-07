@@ -16,7 +16,7 @@
     validate_certs: "{{ platform_validate_certs }}"
   changed_when: true
   notify: Cleanup files from filesystem
-  when: (ansible_distribution == "RED") or (ansible_os_family in ("RedHat"))
+  when: ansible_os_family in ("RedHat", "RED")
 
 - name: Install package pmaagent
   ansible.builtin.apt:
@@ -30,4 +30,4 @@
     name: /tmp/pmaagent.rpm
     state: present
   notify: Restart pmaagent
-  when: (ansible_distribution == "RED") or (ansible_os_family in ("RedHat"))
+  when: ansible_os_family in ("RedHat", "RED")

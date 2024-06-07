@@ -3,7 +3,7 @@
     url: "{{ platform_url }}/integration/agents/register/check"
     body_format: json
     body:
-      host: "{{ agent_host_ip }}"
+      host: "{{ database_ip }}"
     return_content: true
     validate_certs: "{{ platform_validate_certs }}"
     method: "POST"

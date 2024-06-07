@@ -40,9 +40,12 @@ This repository serves the purpose of managing the lifecycle of agent groups (in
 
 ## Requirements
 
-On all nodes specified in the inventory file, the components required are:
-* [Ansible](https://docs.ansible.com/ansible/latest/reference_appendices/release_and_maintenance.html) >= 9.5.0 (core version 2.16);
+On all nodes specified in the inventory file, the following components should be installed:
 * Python3 (with pip module) >= 3.10.0;
+* psycopg2 >= 2.5.1 (it's recommended to install via pip)
+
+On the control node (node where ansible-playbook command is going to be launched) the following components should be installed:
+* [Ansible](https://docs.ansible.com/ansible/latest/reference_appendices/release_and_maintenance.html) >= 9.5.0 (core version 2.16);
 
 The playbook runs under a useraccount that has passwordless access to all nodes of the file inventory with the ability to switch to privileged mode (root) without entering a password.
 
@@ -67,7 +70,7 @@ Fill in the files according to the instructions below:
 1. Using the example ``inventory_template`` file in the root directory of the playbook, create your own ``inventory``. Pay attention to the comments in the source file;
 2. Using the ``group_vars/all.yml`` file as an example, create and place a new file in the ``group_vars`` directory containing the variables for the node group from the ``inventory`` file (e.g., the ``sample_group.yml`` file for the ``sample_group`` group from ``inventory_template``);
 3. Fill the file created in step 2 above with the data relevant to the playbook launch in the required outline;
-4. If necessary, write the public key of the user, on behalf of whom the Playbook is launched, in the file ``roles/files/id_rsa.pub``. This key will be added to the ``postgres`` user;
+4. If necessary, write the public key of the user, on behalf of whom the Playbook is launched, in the file ``roles/tantor_agent/files/id_rsa.pub``. This key will be added to the ``postgres`` user;
 5. If it is necessary to override variables at the node level, add a file with the name of this node and the extension ``.yml`` to the ``host_vars`` directory (for example, the file ``hostnameA.yml`` from ``inventory_template``).
 6. Replace the ``sample_group`` value from the ``agent.yml`` file with the group specified in the ``inventory`` file for which all tasks will be executed;
 
