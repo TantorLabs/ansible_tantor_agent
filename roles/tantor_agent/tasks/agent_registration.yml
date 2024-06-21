@@ -14,70 +14,281 @@
   register: response
   delegate_to: localhost
 
+- name: Check if postgresql node is in master state
+  ansible.builtin.shell: >
+    {% if ((database_user is defined) and (database_user != "") and (database_password is defined) and (database_password != "")) %}
+    PGPASSWORD={{ database_password }}
+    {% endif %}
+    psql
+    -p {{ database_port }}
+    -d {{ database_name }}
+    {% if ((database_user is defined) and (database_user != "") and (database_password is defined) and (database_password != "")) %}
+    -U {{ database_user }}
+    {% endif %}
+    -c "SELECT pg_is_in_recovery();" -tA
+  register: psql_node_status
+  become: true
+  become_user: postgres
+  become_flags: "-i"
+  changed_when: false
 
-- name: Block for DB preparation (without local trust connection)
+- name: Check if pma role exists in system
+  when: psql_node_status.stdout == "f"
+  ansible.builtin.shell: >
+    {% if ((database_user is defined) and (database_user != "") and (database_password is defined) and (database_password != "")) %}
+    PGPASSWORD={{ database_password }}
+    {% endif %}
+    psql
+    -p {{ database_port }}
+    -d {{ database_name }}
+    {% if ((database_user is defined) and (database_user != "") and (database_password is defined) and (database_password != "")) %}
+    -U {{ database_user }}
+    {% endif %}
+    -c "\\du"
+    -tA
+  become: true
+  become_user: postgres
+  become_flags: "-i"
+  register: psql_userlist
+  changed_when: false
+
+- name: Check for presence of pma_user in roles
+  when: psql_node_status.stdout == "f"
+  ansible.builtin.set_fact:
+    pma_user_exists: "{{ 'pma_user|Суперпользователь' in psql_userlist.stdout or 'pma_user|Superuser' in psql_userlist.stdout }}"
+
+- name: Create pma role if not exists in system
   when:
-    - (database_user is defined) and (database_user is defined != "")
-    - (database_password is defined) and (database_password != "")
-  block:
-    - name: Check if postgresql node is in master state (without local trust connection)
-      become: true
-      become_user: postgres
-      community.postgresql.postgresql_query:
-        db: "{{ database_name }}"
-        query: SELECT pg_is_in_recovery();
-        login_host: localhost
-        login_user: "{{ database_user }}"
-        login_password: "{{ database_password }}"
-      changed_when: false
-      register: psql_node_status
+    - psql_node_status.stdout == "f"
+    - not pma_user_exists
+  # noqa no-changed-when
+  ansible.builtin.shell: >
+    {% if ((database_user is defined) and (database_user != "") and (database_password is defined) and (database_password != "")) %}
+    PGPASSWORD={{ database_password }}
+    {% endif %}
+    psql
+    -p {{ database_port }}
+    -d {{ database_name }}
+    {% if ((database_user is defined) and (database_user != "") and (database_password is defined) and (database_password != "")) %}
+    -U {{ database_user }}
+    {% endif %}
+    -c "CREATE ROLE {{ agent_db_user }} WITH SUPERUSER LOGIN PASSWORD '{{ agent_db_user }}' CONNECTION LIMIT 5;"
+    -tA
+  become: true
+  become_user: postgres
+  become_flags: "-i"
 
-    - name: Create pma role (without local trust connection)
-      community.postgresql.postgresql_user:
-        login_host: localhost
-        login_user: "{{ database_user }}"
-        login_password: "{{ database_password }}"
-        db: "{{ database_name }}"
-        name: "{{ agent_db_user }}"
-        password: "{{ agent_db_password }}"
-        encrypted: true
-        conn_limit: 5
-        role_attr_flags: SUPERUSER
-        state: present
-        port: "5432"
-      become: true
-      become_user: postgres
-      when: not psql_node_status.query_result.0.pg_is_in_recovery
-
-- name: Block for DB preparation (with local trust connection)
+- name: Block for DB modification (database_settings_change set to true)
   when:
-    - (database_user is not defined) or (database_user == "")
-    - (database_password is not defined) or (database_password == "")
+    - database_settings_change is true
+    - database_managed_patroni is false
   block:
-    - name: Check if postgresql node is in master state (with local trust connection)
+    - name: Find path of pg_hba.conf
+      ansible.builtin.shell: >
+        {% if ((database_user is defined) and (database_user != "") and (database_password is defined) and (database_password != "")) %}
+        PGPASSWORD={{ database_password }}
+        {% endif %}
+        psql
+        -p {{ database_port }}
+        -d {{ database_name }}
+        {% if ((database_user is defined) and (database_user != "") and (database_password is defined) and (database_password != "")) %}
+        -U {{ database_user }}
+        {% endif %}
+        -c "show hba_file;"
+        -tA
+      register: pg_hba_file_path
       become: true
       become_user: postgres
-      community.postgresql.postgresql_query:
-        db: "{{ database_name }}"
-        query: SELECT pg_is_in_recovery();
-        login_host: localhost
+      become_flags: "-i"
       changed_when: false
-      register: psql_node_status
 
-    - name: Create pma role (with local trust connection))
-      community.postgresql.postgresql_user:
-        login_host: localhost
-        db: "{{ database_name }}"
-        name: "{{ agent_db_user }}"
-        password: "{{ agent_db_password }}"
-        encrypted: true
-        conn_limit: 5
-        role_attr_flags: SUPERUSER
-        state: present
-        port: "5432"
+    - name: Find path of postgresql.conf
+      ansible.builtin.shell: >
+        {% if ((database_user is defined) and (database_user != "") and (database_password is defined) and (database_password != "")) %}
+        PGPASSWORD={{ database_password }}
+        {% endif %}
+        psql
+        -p {{ database_port }}
+        -d {{ database_name }}
+        {% if ((database_user is defined) and (database_user != "") and (database_password is defined) and (database_password != "")) %}
+        -U {{ database_user }}
+        {% endif %}
+        -c "show config_file;"
+        -tA
+      register: postgresql_conf_path
       become: true
       become_user: postgres
-      when: not psql_node_status.query_result.0.pg_is_in_recovery
+      become_flags: "-i"
+      changed_when: false
+
+    - name: Insert values from database_pg_hba_settings into pg_hba.conf
+      ansible.builtin.blockinfile:
+        path: "{{ pg_hba_file_path.stdout }}"
+        block: |
+            {% for item in database_pg_hba_settings %}
+            {{ item }}
+            {% endfor %}
+        insertafter: '# TYPE  DATABASE        USER            ADDRESS                 METHOD'
+      register: pg_hba_result
+
+    - name: Configure listen_addresses in postgresql.conf
+      ansible.builtin.replace:
+        path: "{{ postgresql_conf_path.stdout }}"
+        regexp: '.*listen_addresses\s*=\s*.*'
+        replace: "listen_addresses = '{{ database_listen_address_settings }}'"
+        mode: "0600"
+        backup: true
+      register: listen_address_result
+
+- name: Restart DBMS TantorDB
+  when:
+    - database_vendor == "tantor"
+    - database_managed_patroni is false
+    - listen_address_result.changed or pg_hba_result.changed
+  ansible.builtin.systemd_service:
+    name: tantor-{{ database_tantor_redaction }}-server-{{ database_version }}
+    daemon_reload: true
+    state: restarted
+
+- name: Collect installed PostgreSQL version
+  when:
+    - database_vendor == "postgresql"
+    - database_managed_patroni is false
+  # noqa command-instead-of-module
+  ansible.builtin.shell:
+    cmd: >
+      set -o pipefail &&
+      systemctl list-units --type=service --state=active |
+      grep --extended-regexp 'postgresql(@|(-|)){{ database_version }}(-|@|)|postgres(-|){{ database_version }}(-|@|)' |
+      awk '{print $1}'
+  register: pg_service_name
+  changed_when: false
+
+- name: Restart DBMS PostgreSQL
+  when:
+    - database_vendor == "postgresql"
+    - database_managed_patroni is false
+    - listen_address_result.changed or pg_hba_result.changed
+  ansible.builtin.systemd_service:
+    name: "{{ pg_service_name.stdout.strip() }}"
+    state: restarted
+
+- name: Block for DB preparation patroni-managed DBMS
+  when:
+    - database_managed_patroni is true
+    - database_settings_change is true
+  block:
+
+    - name: Block for changing patroni-managed DBMS
+      when: psql_node_status.stdout == "f"
+      block:
+        - name: Set validate_certs based on database_patroni_ssl
+          ansible_builtin.set_facts:
+            validate_certs_value: "{{ database_patroni_ssl | default(false) | bool }}"
+
+        - name: Get current Patroni configuration using API
+          ansible.builtin.uri:
+            url: >-
+              {% if database_patroni_ssl is true %}
+              https://{{ ansible_hostname }}:8008/config
+              {% else %}
+              http://{{ ansible_default_ipv4.address }}:8008/config
+              {% endif %}
+            method: GET
+            user: "{{ database_patroni_user }}"
+            password: "{{ database_patroni_password }}"
+            force_basic_auth: true
+            return_content: true
+            validate_certs: "{{ validate_certs_value }}"
+            client_cert: "{{ database_patroni_api_cert if validate_certs_value else omit }}"
+            client_key: "{{ database_patroni_api_key if validate_certs_value else omit }}"
+            ca_path: "{{ database_patroni_api_ca if validate_certs_value else omit }}"
+          register: current_patroni_config
+          changed_when: false
+
+        - name: Set updated pg_hba configuration
+          ansible.builtin.set_fact:
+            updated_pg_hba: >-
+              {{
+                current_patroni_config.json.postgresql.pg_hba +
+                (
+                  database_pg_hba_settings
+                  | reject('in', current_patroni_config.json.postgresql.pg_hba)
+                  | list
+                )
+              }}
+
+        - name: Update Patroni configuration using API
+          when:
+            - updated_pg_hba | difference(current_patroni_config.json.postgresql.pg_hba) | length > 0
+          ansible.builtin.uri:
+            url: >-
+              {% if database_patroni_ssl is true %}
+              https://{{ ansible_hostname }}:8008/config
+              {% else %}
+              http://{{ ansible_default_ipv4.address }}:8008/config
+              {% endif %}
+            force_basic_auth: true
+            method: PATCH
+            user: "{{ database_patroni_user }}"
+            password: "{{ database_patroni_password }}"
+            body_format: json
+            headers:
+              Content-Type: "application/json"
+            body: >
+              {
+                "postgresql": {
+                  "pg_hba": {{ updated_pg_hba | to_json }}
+                }
+              }
+            status_code: 200
+            validate_certs: "{{ validate_certs_value }}"
+            client_cert: "{{ database_patroni_api_cert if validate_certs_value else omit }}"
+            client_key: "{{ database_patroni_api_key if validate_certs_value else omit }}"
+            ca_path: "{{ database_patroni_api_ca if validate_certs_value else omit }}"
+
+        - name: Check if patroni cluster needs a restart using API
+          ansible.builtin.uri:
+            url: >-
+              {% if database_patroni_ssl is true %}
+              https://{{ ansible_hostname }}:8008/config
+              {% else %}
+              http://{{ ansible_default_ipv4.address }}:8008/config
+              {% endif %}
+            method: GET
+            user: "{{ database_patroni_user }}"
+            password: "{{ database_patroni_password }}"
+            force_basic_auth: true
+            return_content: true
+            validate_certs: "{{ validate_certs_value }}"
+            client_cert: "{{ database_patroni_api_cert if validate_certs_value else omit }}"
+            client_key: "{{ database_patroni_api_key if validate_certs_value else omit }}"
+            ca_path: "{{ database_patroni_api_ca if validate_certs_value else omit }}"
+          register: restart_status
+
+        - name: Restart Patroni using API
+          when:
+            - restart_status.json.pending_restart | default(false)
+          ansible.builtin.uri:
+            url: >-
+              {% if database_patroni_ssl is true %}
+              https://{{ ansible_hostname }}:8008/config
+              {% else %}
+              http://{{ ansible_default_ipv4.address }}:8008/config
+              {% endif %}
+            method: POST
+            user: "{{ database_patroni_user }}"
+            password: "{{ database_patroni_password }}"
+            force_basic_auth: true
+            body_format: json
+            headers:
+              Content-Type: "application/json"
+            body: '{"restart_pending": true}'
+            status_code: 200
+            validate_certs: "{{ validate_certs_value }}"
+            client_cert: "{{ database_patroni_api_cert if validate_certs_value else omit }}"
+            client_key: "{{ database_patroni_api_key if validate_certs_value else omit }}"
+            ca_path: "{{ database_patroni_api_ca if validate_certs_value else omit }}"
 
 - name: Block for agent less or equial to 3.2.2
   when:
@@ -154,7 +365,10 @@
         --db-user '{{ agent_db_user }}'
         --db-pass '{{ agent_db_password }}'
         --patroni-host '{{ database_patroni_host | default(database_ip) }}'
-        --patroni-port '{{ database_patroni_port }}' {% if database_patroni_ssl %}--patroni-ssl{%endif %}
+        --patroni-port '{{ database_patroni_port }}'
+        {% if validate_certs_value %}
+        --patroni-ssl
+        {%endif %}
         --patroni-user '{{ database_patroni_user }}'
         --patroni-password '{{ database_patroni_password }}'
         --confirm

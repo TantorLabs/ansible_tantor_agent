@@ -7,11 +7,19 @@
 - name: Install require package for installing pmaagent
   when: ansible_os_family in ("Debian", "Astra Linux")
   ansible.builtin.package:
-    name: xz-utils
+    name: "{{ item }}"
     state: present
+  loop:
+    - xz-utils
+    - chrony
+  notify: Restart chrony
 
 - name: Install require package for installing pmaagent
   when: ansible_os_family in ("RedHat", "RED")
   ansible.builtin.package:
-    name: xz
+    name: "{{ item }}"
     state: present
+  loop:
+    - xz
+    - chrony
+  notify: Restart chrony

@@ -1,9 +1,12 @@
 # ! #
 ### Defaults file for agent role
 
+#####################
+# Platform settings #
+#####################
 # Address Tantor Platform server
 # Add full path to working Tantor Platform here in format http(s)://platform.tantorlabs.ru
-platform_url: ''
+platform_url: ""
 
 # Check certificate for downloaded packages
 # Use true in case if platform certificate works fine, otherwise (e.g. in case of self-managed certs) use false
@@ -11,41 +14,89 @@ platform_validate_certs: false
 
 # Platform token for the registering agent
 # Generate Install token in Platform and pase it here
-platform_token: ''
+platform_token: ""
 
 # Connection address to the Nats server
 # In case if there's proxy before NATS - use proxy's address
 # Do not forget to add port
-platform_nats_endpoint: ''
+platform_nats_endpoint: ""
 
+# Workspace in Platform that agents will be attached to
+platform_workspace_name: "test"
+
+# If platform is installed not in Docker-way use port that proxies to packages directory in reverse_proxy node
+platform_repo_port: "8443"
+
+
+##################
+# Agent settings #
+##################
 ## Agent installation mode
 # local      - Download and install deb/rpm agent packages version corresponding to the platform version \
-#                from the reverse proxy (nginx) component of the platform without connecting to external resources. \
-#                The agent_version parameter is ignored
+#              from the reverse proxy (nginx) component of the platform without connecting to external resources. \
+#              The agent_version parameter is ignored
 # repo       - Install the platform agent from the Tantor Labs public repository
 # purge      - Delete package agent from system and deregister agent from Platform
 # deregister - Deregister agent from Platform without delete package
-agent_install_mode: local
+agent_install_mode: "local"
 
 # The version of the agent to be installed, only applies to installing an agent from the repository
-agent_version: 3.3.1
+agent_version: "3.3.1"
 
 ### Agent settings for registration in the Tantor Platform
 
-# Workspace in Platform that agents will be attached to
-platform_workspace_name: test
-
 # Agent environment
-agent_environment: SERVER
+agent_environment: "SERVER"
 
 # Agent DB type. Support values are: TantorDB, PostgreSQL
-agent_db_type: PostgreSQL
+agent_db_type: "PostgreSQL"
+
+# User that will be created for agent purposes
+agent_db_user: "pma_user"
+
+# Password for the user from agent_db_user variable
+agent_db_password: "pma_user"
+
+# vars file for external agent repo
+agent_repo_key: "public.tantorlabs.ru"
+agent_repo: "nexus.tantorlabs.ru"
+
+#############################
+# Block for DB modification #
+#############################
+# This section refers to the change of pg_hba and listen_address variables of DBMS. By default playbook does not provide any changes.
+
+database_settings_change: false
+
+# If pg_hba file needs to be changed - delete [] and add the lines accordingly to the following structure
+# database_pg_hba_settings:
+# #TYPE  DATABASE        USER            ADDRESS                 METHOD'
+# - all  all   pma_user {{ ansible_default_ipv4.address }}/32 md5
+# - all  all   pma_user {{ ansible_default_ipv4.address }}/32 scram-sha-256
+database_pg_hba_settings:
+    - host    all             pma_user {{ ansible_default_ipv4.address }}/32 md5
+
+# If listen address needs to be changed - specify all interfaces, that DBMS should listen to, separated with comma
+database_listen_address_settings: "*"
+
+############################
+# Block for DB and Patroni #
+############################
+
+# Specify the vendor of installed database (choose from tantor or postgresql)
+database_vendor: ""
+
+# If database vendor is tantor specify redaction (choose from be, se and se-1c )
+database_tantor_redaction: ""
+
+# Specify the major version of installed database
+database_version: ""
 
 # IP address of the database that will be used to connect to the Platform
 database_ip: "{{ ansible_default_ipv4.address }}"
 
 # DBMS port, that agent will try to connect to
-database_port: 5432
+database_port: "5432"
 
 # User that connects to DBMS
 # If your pg_hba.conf does not allow local trust connection for user postgres - specify the needed username here
@@ -56,16 +107,7 @@ database_user: ""
 database_password: ""
 
 # Name of the database through which DBMS statistics and metrics are collected
-database_name: postgres
-
-# If platform is installed not in Docker-way use port that proxies to packages directory in reverse_proxy node
-platform_repo_port: 8443
-
-# User that will be created for agent purposes
-agent_db_user: pma_user
-
-# Password for the user from agent_db_user variable
-agent_db_password: pma_user
+database_name: "postgres"
 
 # Specify if DBMS is managed by Patroni
 database_managed_patroni: false
@@ -73,19 +115,19 @@ database_managed_patroni: false
 # Specify if patroni has certs
 database_patroni_ssl: false
 
-# Speficy hosts that is managed by patroni
+# If certs are present - specify the path
+database_patroni_api_cert: ""
+database_patroni_api_key: ""
+database_patroni_api_ca: ""
+
+# Specify host that is managed by patroni
 # database_patroni_host: ''
 
 # Specify port for the connection to Patroni API
-database_patroni_port: 8008
+database_patroni_port: "8008"
 
 # Specify user for the connection to Patroni API
 database_patroni_user: ''
 
 # Specify password for the connection to Patroni API
 database_patroni_password: ''
-
-# vars file for plaftorm
-
-agent_repo_key: public.tantorlabs.ru
-agent_repo: nexus.tantorlabs.ru
