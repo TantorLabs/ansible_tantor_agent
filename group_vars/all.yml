@@ -48,9 +48,6 @@ agent_version: "3.3.1"
 # Agent environment
 agent_environment: "SERVER"
 
-# Agent DB type. Support values are: TantorDB, PostgreSQL
-agent_db_type: "PostgreSQL"
-
 # User that will be created for agent purposes
 agent_db_user: "pma_user"
 

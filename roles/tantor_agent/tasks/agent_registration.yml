@@ -32,7 +32,7 @@
   become_flags: "-i"
   changed_when: false
 
-- name: Check if pma role exists in system
+- name: Check if superuser role exists in system
   when: psql_node_status.stdout == "f"
   ansible.builtin.shell: >
     {% if ((database_user is defined) and (database_user != "") and (database_password is defined) and (database_password != "")) %}
@@ -52,15 +52,18 @@
   register: psql_userlist
   changed_when: false
 
-- name: Check for presence of pma_user in roles
+- name: Check for presence of needed superuser in roles
   when: psql_node_status.stdout == "f"
   ansible.builtin.set_fact:
-    pma_user_exists: "{{ 'pma_user|Суперпользователь' in psql_userlist.stdout or 'pma_user|Superuser' in psql_userlist.stdout }}"
+    superuser_exists: >-
+      {{
+        (agent_db_user + '|Суперпользователь') in psql_userlist.stdout or (agent_db_user + '|Superuser') in psql_userlist.stdout
+      }}
 
-- name: Create pma role if not exists in system
+- name: Create superuser role if not exists in system
   when:
     - psql_node_status.stdout == "f"
-    - not pma_user_exists
+    - not superuser_exists
   # noqa no-changed-when
   ansible.builtin.shell: >
     {% if ((database_user is defined) and (database_user != "") and (database_password is defined) and (database_password != "")) %}
@@ -72,7 +75,7 @@
     {% if ((database_user is defined) and (database_user != "") and (database_password is defined) and (database_password != "")) %}
     -U {{ database_user }}
     {% endif %}
-    -c "CREATE ROLE {{ agent_db_user }} WITH SUPERUSER LOGIN PASSWORD '{{ agent_db_user }}' CONNECTION LIMIT 5;"
+    -c "CREATE ROLE {{ agent_db_user }} WITH SUPERUSER LOGIN PASSWORD '{{ agent_db_password }}' CONNECTION LIMIT 5;"
     -tA
   become: true
   become_user: postgres
@@ -180,19 +183,18 @@
   block:
 
     - name: Block for changing patroni-managed DBMS
-      when: psql_node_status.stdout == "f"
       block:
         - name: Set validate_certs based on database_patroni_ssl
-          ansible_builtin.set_facts:
+          ansible.builtin.set_fact:
             validate_certs_value: "{{ database_patroni_ssl | default(false) | bool }}"
 
         - name: Get current Patroni configuration using API
           ansible.builtin.uri:
             url: >-
               {% if database_patroni_ssl is true %}
-              https://{{ ansible_hostname }}:8008/config
+              https://{{ ansible_hostname }}:{{ database_patroni_port }}/config
               {% else %}
-              http://{{ ansible_default_ipv4.address }}:8008/config
+              http://{{ ansible_default_ipv4.address }}:{{ database_patroni_port }}/config
               {% endif %}
             method: GET
             user: "{{ database_patroni_user }}"
@@ -221,12 +223,13 @@
         - name: Update Patroni configuration using API
           when:
             - updated_pg_hba | difference(current_patroni_config.json.postgresql.pg_hba) | length > 0
+            - psql_node_status.stdout == "f"
           ansible.builtin.uri:
             url: >-
               {% if database_patroni_ssl is true %}
-              https://{{ ansible_hostname }}:8008/config
+              https://{{ ansible_hostname }}:{{ database_patroni_port }}/config
               {% else %}
-              http://{{ ansible_default_ipv4.address }}:8008/config
+              http://{{ ansible_default_ipv4.address }}:{{ database_patroni_port }}/config
               {% endif %}
             force_basic_auth: true
             method: PATCH
@@ -251,9 +254,9 @@
           ansible.builtin.uri:
             url: >-
               {% if database_patroni_ssl is true %}
-              https://{{ ansible_hostname }}:8008/config
+              https://{{ ansible_hostname }}:{{ database_patroni_port }}/config
               {% else %}
-              http://{{ ansible_default_ipv4.address }}:8008/config
+              http://{{ ansible_default_ipv4.address }}:{{ database_patroni_port }}/config
               {% endif %}
             method: GET
             user: "{{ database_patroni_user }}"
@@ -269,12 +272,13 @@
         - name: Restart Patroni using API
           when:
             - restart_status.json.pending_restart | default(false)
+            - psql_node_status.stdout == "f"
           ansible.builtin.uri:
             url: >-
               {% if database_patroni_ssl is true %}
-              https://{{ ansible_hostname }}:8008/config
+              https://{{ ansible_hostname }}:{{ database_patroni_port }}/config
               {% else %}
-              http://{{ ansible_default_ipv4.address }}:8008/config
+              http://{{ ansible_default_ipv4.address }}:{{ database_patroni_port }}/config
               {% endif %}
             method: POST
             user: "{{ database_patroni_user }}"
@@ -359,7 +363,7 @@
         pmaagent instances add
         --name '{{ database_ip }}'
         --environment '{{ agent_environment }}'
-        --type '{{ agent_db_type }}'
+        --type '{% if database_vendor == "tantor" %}TantorDB{% elif database_vendor == "postgresql" %}PostgreSQL{% endif %}'
         --db-host '{{ database_ip }}'
         --db-port '{{ database_port }}'
         --db-user '{{ agent_db_user }}'
