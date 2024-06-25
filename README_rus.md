@@ -42,7 +42,7 @@
 
 На всех узлах, указанных в файле inventory, необходимо наличие компонентов:
 * Python3 (с модулем pip) >= 3.10.0;
-* psycopg2 >= 2.5.1 (рекомендуется установка через pip)
+* СУБД TantorDB или PostgreSQL (включая postgresql-contrib) c внешним управлением Patroni или без внешнего управления;
 
 На узле, с которого будет запускаться плейбук, необходимо наличие компонентов:
 * [Ansible](https://docs.ansible.com/ansible/latest/reference_appendices/release_and_maintenance.html) >= 9.5.0 (версия ядра (core version) 2.16);
@@ -57,12 +57,11 @@
 
 ```bash
 grep -r --exclude='*README*' '# ! #' ./* 
-./agent.yml:  hosts: sample_group # ! # Change sample_group to appropriate group from inventory file
 ./group_vars/all.yml:# ! #
 ./host_vars/hostnameX.yml:# ! #
 ./inventory_template:sample_group # ! # This template should be replaced with real group of hosts; When a new group is added (in section below) - it should be also added here;
 ./inventory_template:[sample_group] # ! # Template group name
-./roles/tantor_agent/files/id_rsa.pub:# ! # 
+./roles/tantor_agent/files/id_rsa.pub:# ! # Put you pub key here. I will be added to postgres user. Replace this line and leave just the public key in this file
 ```
 
 Заполните файлы, согласно инструкции ниже:

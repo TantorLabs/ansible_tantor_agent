@@ -28,7 +28,7 @@
     -c "SELECT pg_is_in_recovery();" -tA
   register: psql_node_status
   become: true
-  become_user: postgres
+  become_user: "{{ database_psql_user | d('postgres', true) }}"
   become_flags: "-i"
   changed_when: false
 
@@ -47,7 +47,7 @@
     -c "\\du"
     -tA
   become: true
-  become_user: postgres
+  become_user: "{{ database_psql_user | d('postgres', true) }}"
   become_flags: "-i"
   register: psql_userlist
   changed_when: false
@@ -78,7 +78,7 @@
     -c "CREATE ROLE {{ agent_db_user }} WITH SUPERUSER LOGIN PASSWORD '{{ agent_db_password }}' CONNECTION LIMIT 5;"
     -tA
   become: true
-  become_user: postgres
+  become_user: "{{ database_psql_user | d('postgres', true) }}"
   become_flags: "-i"
 
 - name: Block for DB modification (database_settings_change set to true)
@@ -101,7 +101,7 @@
         -tA
       register: pg_hba_file_path
       become: true
-      become_user: postgres
+      become_user: "{{ database_psql_user | d('postgres', true) }}"
       become_flags: "-i"
       changed_when: false
 
@@ -120,7 +120,7 @@
         -tA
       register: postgresql_conf_path
       become: true
-      become_user: postgres
+      become_user: "{{ database_psql_user | d('postgres', true) }}"
       become_flags: "-i"
       changed_when: false
 
@@ -186,7 +186,7 @@
       block:
         - name: Set validate_certs based on database_patroni_ssl
           ansible.builtin.set_fact:
-            validate_certs_value: "{{ database_patroni_ssl | default(false) | bool }}"
+            validate_certs_value: "{{ database_patroni_ssl | d(false) | bool }}"
 
         - name: Get current Patroni configuration using API
           ansible.builtin.uri:
@@ -271,7 +271,7 @@
 
         - name: Restart Patroni using API
           when:
-            - restart_status.json.pending_restart | default(false)
+            - restart_status.json.pending_restart | d(false)
             - psql_node_status.stdout == "f"
           ansible.builtin.uri:
             url: >-
@@ -308,10 +308,10 @@
         --db-user '{{ agent_db_user }}'
         --db-password '{{ agent_db_password }}'
         --host '{{ database_ip }}'
-        --patroni-endpoint '{{ database_patroni_host | default(database_ip) }}:{{ database_patroni_port }}'
+        --patroni-endpoint '{{ database_patroni_host | d(database_ip) }}:{{ database_patroni_port }}'
         --patroni-user '{{ database_patroni_user }}'
         --patroni-password '{{ database_patroni_password }}'
-        --type '{{ agent_db_type }}'
+        --type '{% if database_vendor == "tantor" %}TantorDB{% elif database_vendor == "postgresql" %}PostgreSQL{% endif %}'
         --workspace-name '{{ platform_workspace_name }}'
         --nats-endpoint '{{ platform_nats_endpoint }}'
       register: install_result
@@ -329,7 +329,7 @@
         --db-user '{{ agent_db_user }}'
         --db-password '{{ agent_db_password }}'
         --host '{{ database_ip }}'
-        --type '{{ agent_db_type }}'
+        --type '{% if database_vendor == "tantor" %}TantorDB{% elif database_vendor == "postgresql" %}PostgreSQL{% endif %}'
         --workspace-name '{{ platform_workspace_name }}'
         --nats-endpoint '{{ platform_nats_endpoint }}'
       register: install_result
@@ -368,9 +368,9 @@
         --db-port '{{ database_port }}'
         --db-user '{{ agent_db_user }}'
         --db-pass '{{ agent_db_password }}'
-        --patroni-host '{{ database_patroni_host | default(database_ip) }}'
+        --patroni-host '{{ database_patroni_host | d(database_ip) }}'
         --patroni-port '{{ database_patroni_port }}'
-        {% if validate_certs_value %}
+        {% if validate_certs_value | d(false) | bool %}
         --patroni-ssl
         {%endif %}
         --patroni-user '{{ database_patroni_user }}'
@@ -392,7 +392,7 @@
         pmaagent instances add
         --name '{{ database_ip }}'
         --environment '{{ agent_environment }}'
-        --type '{{ agent_db_type }}'
+        --type '{% if database_vendor == "tantor" %}TantorDB{% elif database_vendor == "postgresql" %}PostgreSQL{% endif %}'
         --db-host '{{ database_ip }}'
         --db-port '{{ database_port }}'
         --db-user '{{ agent_db_user }}'

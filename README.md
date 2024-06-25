@@ -42,7 +42,7 @@ This repository serves the purpose of managing the lifecycle of agent groups (in
 
 On all nodes specified in the inventory file, the following components should be installed:
 * Python3 (with pip module) >= 3.10.0;
-* psycopg2 >= 2.5.1 (it's recommended to install via pip)
+* Self- or patroni-managed DBMS TantorDB or PostgreSQL (including postgresql-contrib)
 
 On the control node (node where ansible-playbook command is going to be launched) the following components should be installed:
 * [Ansible](https://docs.ansible.com/ansible/latest/reference_appendices/release_and_maintenance.html) >= 9.5.0 (core version 2.16);
@@ -57,12 +57,11 @@ In the process of prepping the playbook for launch, all files to be looked at ca
 
 ```bash
 grep -r --exclude='*README*' '# ! #' ./* 
-./agent.yml: hosts: sample_group # ! # Change sample_group to appropriate group from inventory file
 ./group_vars/all.yml:# ! ! #
 ./host_vars/hostnameX.yml:# ! ! #
 ./inventory_template:sample_group # ! ! # This template should be replaced with real group of hosts; When a new group is added (in section below) - it should be also added here;
 ./inventory_template:[sample_group] # ! ! # Template group name
-./roles/tantor_agent/files/id_rsa.pub:# ! ! # 
+./roles/tantor_agent/files/id_rsa.pub:# ! # Put you pub key here. I will be added to postgres user. Replace this line and leave just the public key in this file
 ```
 
 Fill in the files according to the instructions below:

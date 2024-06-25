@@ -1,5 +1,5 @@
 - name: Tantor agent playbook
-  hosts: sample_group # ! # Change sample_group to appropriate group from inventory file
+  hosts: all
   become: true
   tasks: []
   roles:

@@ -38,7 +38,7 @@ platform_repo_port: "8443"
 # repo       - Install the platform agent from the Tantor Labs public repository
 # purge      - Delete package agent from system and deregister agent from Platform
 # deregister - Deregister agent from Platform without delete package
-agent_install_mode: "local"
+agent_install_mode: "repo"
 
 # The version of the agent to be installed, only applies to installing an agent from the repository
 agent_version: "3.3.1"
@@ -65,13 +65,15 @@ agent_repo: "nexus.tantorlabs.ru"
 
 database_settings_change: false
 
-# If pg_hba file needs to be changed - delete [] and add the lines accordingly to the following structure
+# Change the lines accordingly to the following structure if pg_hba.conf file should be changed.
 # database_pg_hba_settings:
 # #TYPE  DATABASE        USER            ADDRESS                 METHOD'
-# - all  all   pma_user {{ ansible_default_ipv4.address }}/32 md5
-# - all  all   pma_user {{ ansible_default_ipv4.address }}/32 scram-sha-256
+# - local   all  {{ agent_db_user }}  {{ database_auth_method }}
+# - all  all   {{ agent_db_user }} {{ ansible_default_ipv4.address }}/32 {{ database_auth_method }}
+# etc
+# Make sure that you've granted the password auth (md5 or scram-sha-256) to the user, mentioned in agent_db_user variable through all hosts in the DB cluster
 database_pg_hba_settings:
-    - host    all             pma_user {{ ansible_default_ipv4.address }}/32 md5
+    - host    all             {{ agent_db_user | d('pma_user', true) }}             0.0.0.0/0               {{ database_auth_method | d('scram-sha-256', true) }}
 
 # If listen address needs to be changed - specify all interfaces, that DBMS should listen to, separated with comma
 database_listen_address_settings: "*"
@@ -79,6 +81,9 @@ database_listen_address_settings: "*"
 ############################
 # Block for DB and Patroni #
 ############################
+
+# Specify user account that has psql in PATH
+database_psql_user: ""
 
 # Specify the vendor of installed database (choose from tantor or postgresql)
 database_vendor: ""
@@ -88,6 +93,9 @@ database_tantor_redaction: ""
 
 # Specify the major version of installed database
 database_version: ""
+
+# Specify database auth_method
+database_auth_method: ""
 
 # IP address of the database that will be used to connect to the Platform
 database_ip: "{{ ansible_default_ipv4.address }}"
