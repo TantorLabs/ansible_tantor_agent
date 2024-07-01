@@ -80,5 +80,5 @@ The main variable file used by the playbook is ``group_vars/<file created in ste
 ---
 To start the playbook use the command:
 ```bash
-ansible-playbook -i <path to inventory file> -l <group of nodes from inventory file> -D
+ansible-playbook -i <path to inventory file> -l <group of nodes from inventory file> agent.yml -D
 ```

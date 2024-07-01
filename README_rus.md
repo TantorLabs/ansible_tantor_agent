@@ -80,5 +80,5 @@ grep -r --exclude='*README*' '# ! #' ./*
 ---
 Для запуска плейбука используйте команду:
 ```bash
-ansible-playbook -i <путь к файлу inventory> -l <группа узлов из файла inventory> -D
+ansible-playbook -i <путь к файлу inventory> -l <группа узлов из файла inventory> agent.yml -D
 ```
