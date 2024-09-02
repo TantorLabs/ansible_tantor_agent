@@ -21,12 +21,23 @@ platform_token: ""
 # Do not forget to add port
 platform_nats_endpoint: ""
 
+# Specify platform tennant ID that will be used
+platform_tenant_id: "1"
+
 # Workspace in Platform that agents will be attached to
-platform_workspace_name: "test"
+platform_workspace_name: ""
 
 # If platform is installed not in Docker-way use port that proxies to packages directory in reverse_proxy node
 platform_repo_port: "8443"
 
+# Default value for platform version. In case if agent_install_mode is selected as local - could be overwritten by appropriate task
+platform_version: ""
+
+# Platform admin username
+platform_admin_username: ""
+
+# Platform admin password
+platform_admin_password: ""
 
 ##################
 # Agent settings #
@@ -41,18 +52,21 @@ platform_repo_port: "8443"
 agent_install_mode: "repo"
 
 # The version of the agent to be installed, only applies to installing an agent from the repository
-agent_version: "3.3.1"
+agent_version: "{{ platform_version }}"
 
 ### Agent settings for registration in the Tantor Platform
 
 # Agent environment
 agent_environment: "SERVER"
 
+# Agent DB type. Support values are: TantorDB, PostgreSQL
+# agent_db_type: "PostgreSQL"
+
 # User that will be created for agent purposes
-agent_db_user: "pma_user"
+agent_db_user: ""
 
 # Password for the user from agent_db_user variable
-agent_db_password: "pma_user"
+agent_db_password: ""
 
 # vars file for external agent repo
 agent_repo_key: "public.tantorlabs.ru"
@@ -62,6 +76,8 @@ agent_repo: "nexus.tantorlabs.ru"
 # Block for DB modification #
 #############################
 # This section refers to the change of pg_hba and listen_address variables of DBMS. By default playbook does not provide any changes.
+database_psql_user: "postgres"
+database_auth_method: ""
 
 database_settings_change: false
 
@@ -82,9 +98,6 @@ database_listen_address_settings: "*"
 # Block for DB and Patroni #
 ############################
 
-# Specify user account that has psql in PATH
-database_psql_user: ""
-
 # Specify the vendor of installed database (choose from tantor or postgresql)
 database_vendor: ""
 
@@ -94,9 +107,6 @@ database_tantor_redaction: ""
 # Specify the major version of installed database
 database_version: ""
 
-# Specify database auth_method
-database_auth_method: ""
-
 # IP address of the database that will be used to connect to the Platform
 database_ip: "{{ ansible_default_ipv4.address }}"
 
@@ -105,7 +115,7 @@ database_port: "5432"
 
 # User that connects to DBMS
 # If your pg_hba.conf does not allow local trust connection for user postgres - specify the needed username here
-database_user: ""
+database_user: "postgres"
 
 # Password for the user that connects to DBMS
 # # If your pg_hba.conf does not allow local trust connection for user postgres - specify the needed password for the user "database_user" here
