@@ -1,0 +1,6 @@
+- name: Tantor agent playbook
+  hosts: all
+  become: true
+  tasks: []
+  roles:
+    - { role: tantor_agent }

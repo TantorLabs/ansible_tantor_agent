@@ -1,0 +1,29 @@
+---
+- name: Prepare nodes for the future playbook run
+  ansible.builtin.include_tasks: prepare_nodes.yml
+
+- name: Install agent uging mode "repo"
+  ansible.builtin.include_tasks: install_agent_repo.yml
+  when: agent_install_mode == 'repo'
+
+- name: Install agent uging mode "local"
+  ansible.builtin.include_tasks: install_agent_local.yml
+  when: agent_install_mode == 'local'
+
+- name: Check version of agent
+  ansible.builtin.command: pmaagent version -r
+  register: agent_version
+  changed_when: false
+  failed_when: false
+
+- name: Deregister agent
+  ansible.builtin.include_tasks: agent_deregister.yml
+  when: agent_install_mode in ('purge', 'deregister')
+
+- name: Register agent
+  ansible.builtin.include_tasks: agent_registration.yml
+  when: agent_install_mode not in ('purge', 'deregister')
+
+- name: Delete agent
+  ansible.builtin.include_tasks: delete_agent.yml
+  when: agent_install_mode == 'purge'

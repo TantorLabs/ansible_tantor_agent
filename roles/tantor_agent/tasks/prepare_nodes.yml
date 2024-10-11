@@ -1,0 +1,25 @@
+- name: Add public ssh key to user postgres
+  ansible.posix.authorized_key:
+    user: postgres
+    key: "{{ lookup('file', '../files/id_rsa.pub') }}"
+    state: present
+
+- name: Install require package for installing pmaagent
+  when: ansible_os_family in ("Debian", "Astra Linux")
+  ansible.builtin.package:
+    name: "{{ item }}"
+    state: present
+  loop:
+    - xz-utils
+    - chrony
+  notify: Restart chrony
+
+- name: Install require package for installing pmaagent
+  when: ansible_os_family in ("RedHat", "RED")
+  ansible.builtin.package:
+    name: "{{ item }}"
+    state: present
+  loop:
+    - xz
+    - chrony
+  notify: Restart chrony

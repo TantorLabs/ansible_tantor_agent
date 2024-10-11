@@ -1,0 +1,134 @@
+- name: Block for operation with the platform that should be performed once
+  run_once: true
+  become: false
+  block:
+    - name: Log in to the platform and get access token
+      ansible.builtin.uri:
+        url: "{{ platform_url }}/api/login"
+        body_format: json
+        body:
+          login: "{{ platform_admin_username }}"
+          password: "{{ platform_admin_password }}"
+        return_content: true
+        validate_certs: "{{ platform_validate_certs }}"
+        method: "POST"
+        headers:
+          accept: "application/json, text/plain, */*"
+          content-type: "application/json"
+        status_code: [200]
+      register: login_response
+      delegate_to: localhost
+
+    - name: Set access token fact
+      ansible.builtin.set_fact:
+        access_token: "{{ login_response.json.accessToken }}"
+
+    # Получаем список тенантов
+    - name: Get list of tenants
+      ansible.builtin.uri:
+        url: "{{ platform_url }}/api/tenants?page=1&limit=50"
+        headers:
+          Authorization: "Bearer {{ access_token }}"
+          accept: "application/json"
+        validate_certs: "{{ platform_validate_certs }}"
+        method: "GET"
+        return_content: true
+        status_code: [200]
+      register: tenants_response
+      delegate_to: localhost
+
+    # Переключаемся на нужный тенант и получаем новый токен
+    - name: Switch to tenant and get tenant token
+      ansible.builtin.uri:
+        url: "{{ platform_url }}/api/current_user/session/tenant/{{ platform_tenant_id }}"
+        headers:
+          Authorization: "Bearer {{ access_token }}"
+          accept: "application/json"
+        validate_certs: "{{ platform_validate_certs }}"
+        method: "POST"
+        return_content: true
+        status_code: [200]
+      register: tenant_token_response
+      delegate_to: localhost
+
+    - name: Set tenant token fact
+      ansible.builtin.set_fact:
+        tenant_token: "{{ tenant_token_response.json.accessToken }}"
+
+    # Создаём установочный токен доступа
+    - name: Create installation token
+      ansible.builtin.uri:
+        url: "{{ platform_url }}/api/integrations/tokens"
+        headers:
+          Authorization: "Bearer {{ tenant_token }}"
+          accept: "application/json, text/plain, */*"
+        validate_certs: "{{ platform_validate_certs }}"
+        method: "POST"
+        body_format: json
+        body:
+          name: "Ansible token"
+          expiresAt: "{{ (ansible_date_time.iso8601 | regex_replace('T.*', '')) }}T20:59:59Z"
+          scope: "INSTALL"
+        return_content: true
+        status_code: [200]
+      register: platform_token_response
+      delegate_to: localhost
+
+    - name: Set installation platform token fact
+      ansible.builtin.set_fact:
+        platform_token: "{{ platform_token_response.json.tokenString }}"
+
+- name: Check Agent state
+  ansible.builtin.uri:
+    url: "{{ platform_url }}/integration/agents/register/check"
+    body_format: json
+    body:
+      host: "{{ database_ip }}"
+    return_content: true
+    validate_certs: "{{ platform_validate_certs }}"
+    method: "POST"
+    headers:
+      Authorization: "Bearer {{ platform_token }}"
+    status_code: [422, 200]
+  become: false
+  register: response
+  delegate_to: localhost
+
+- name: Deregister agent
+  ansible.builtin.command: pmaagent deregister -y
+  register: deregister_result
+  failed_when: deregister_result.stderr != ""
+  changed_when:
+    - "deregister_result.stdout is regex ('Agent successfully deregistered')"
+  when: response.json.code == 'WORKSPACE.AGENT.CHECK.EXISTS'
+
+- name: Cleanup process
+  become: false
+  run_once: true
+  block:
+    - name: Find installation tokens by name
+      ansible.builtin.uri:
+        url: "{{ platform_url }}/api/integrations/tokens?limit=10&page=1&sort=asc:apiKeyID&name=contains(Ansible%20token)"
+        headers:
+          Authorization: "Bearer {{ tenant_token }}"
+          accept: "application/json, text/plain, */*"
+        validate_certs: "{{ platform_validate_certs }}"
+        method: "GET"
+        return_content: true
+        status_code: [200]
+      register: tokens_list_response
+      delegate_to: localhost
+
+    - name: Delete installation tokens
+      ansible.builtin.uri:
+        url: "{{ platform_url }}/api/integrations/tokens/{{ item.apiKeyID }}"
+        headers:
+          Authorization: "Bearer {{ tenant_token }}"
+          accept: "application/json, text/plain, */*"
+        validate_certs: "{{ platform_validate_certs }}"
+        method: "DELETE"
+        status_code: [200, 204]
+      loop: "{{ tokens_list_response.json.results | selectattr('name', 'equalto', 'Ansible token') | list }}"
+      loop_control:
+        label: "{{ item.apiKeyID }}"
+      delegate_to: localhost

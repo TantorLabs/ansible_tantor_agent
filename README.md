@@ -1,197 +1,84 @@
-Ansible Role: Tantor Agent
-=========
+## Ansible role: Tantor Agent
 
-Ansible role for management lifecycle Tantor Platform Agent (install, register, delete)
+## General Information
 
-Requirements
-------------
+This repository serves the purpose of managing the lifecycle of agent groups (install, update, uninstall).
 
-No special requirements; note that this role requires root access, so either run it in a playbook with a global become: yes, or invoke the role in your playbook like:
+## Repository structure
 
 ```
-- hosts: database
-  roles:
-    - role: tantor_agent
-      become: yes
+|-- agent.yml                             # A playbook that runs the tantor_agent role
+|-- group_vars                            # A directory containing a set of variables for node groups
+|   |-- all.yml                           # Set of variables applied on the whole group of nodes
+|-- inventory                             # The inventory file that needs to be filled in for ansible to work
+|-- inventory_template                    # An inventory file template with variable descriptions in English
+|-- LICENSE                               # Description of the license under which this playbook is distributed
+|-- README.md                             # Description of the repository in English
+|-- README_rus.md                         # Description of the repository in Russian
+|-- roles                                 # The directory containing the roles executed by ansible
+|   |-- tantor_agent                      # A tantor_agent role that is installed on all nodes specified in the playbook
+|   |   |-- defaults                      # Directory containing the default values for the tantor_agent role
+|   |   |   | -- main.yml                 # The main file of the Defaults directory
+|   |   |-- files                         # Directory containing additional files used during ansible operation
+|   |   |   | -- id_rsa.pub               # The public key that will be placed in the authorized_keys of the postgres user
+|   |   |-- handlers                      # Catalog containing playbook event handlers
+|   |   |   |-- main.yml                  # The main file of the handlers directory
+|   |   |-- meta                          # Каталог, содержащий информацию о роли
+|   |   |   |-- main.yml                  # A catalog containing information about the role
+|   |   |-- tasks                         # A directory containing the main tasks performed by the tantor_agent role on the group of nodes specified in the playbook
+|   |   |   |-- agent_deregister.yml      # File containing tasks to deregister the agent
+|   |   |   |-- agent_registration.yml    # File containing tasks for agent registration
+|   |   |   |-- delete_agent.yml          # File containing tasks to remove the agent
+|   |   |   |-- install_agent_local.yml   # File containing tasks to install the agent without consulting external repositories
+|   |   |   |-- install_agent_repo.yml    # File containing tasks to install an agent from the Tantor external repository
+|   |   |   |-- main.yml                  # The main file of the tasks directory
+|   |   |   |-- prepare_nodes.yml         # File containing tasks to prepare assemblies for further operation
+|   |   |-- tests                         # A catalog containing instructions for the role test
+|   |   |   |-- inventory                 # Inventory file for use during testing of the tantor_agent role
+|   |   |   |-- test.yml                  # Playbook for testing the role of tantor_agent
 ```
 
-Role Variables
---------------
-```
-tantor_agent_url: https://server
-```
-Address Tantor Platform server
+## Requirements
 
-```
-tantor_agent_validate_certs: true
-```
-Check certificate for downloaded packages
+On all nodes specified in the inventory file, the following components should be installed:
+* Python3 (with pip module) >= 3.10.0;
+* Self- or patroni-managed DBMS TantorDB or PostgreSQL (including postgresql-contrib)
 
-```
-tantor_agent_token: some_token
-```
-Platform token for the registering agent
+On the control node (node where ansible-playbook command is going to be launched) the following components should be installed:
+* [Ansible](https://docs.ansible.com/ansible/latest/reference_appendices/release_and_maintenance.html) >= 9.5.0 (core version 2.16);
 
-```
-tantor_agent_install_mode: local
-```
-platform agent installation mode
-local - Download deb/rpm packages from the reverse proxy (nginx) component of the platform without connecting to external resources. 
-Install the agent version corresponding to the platform version. 
-The tantor_agent_version parameter is ignored
-repo - Install the platform agent from the Tantor Labs public repository
-purge - Delete package agent from system and deregister agent from Platform
-deregister - Deregister agent from Platform without delete package
+The playbook runs under a useraccount that has passwordless access to all nodes of the file inventory with the ability to switch to privileged mode (root) without entering a password.
 
+## Preparation steps
 
-```
-tantor_agent_version: 3.2.0
-```
-the version of the agent to be installed, only applies to installing an agent from the repository
+Make sure that there is a Workspace in Tantor Platform to which agents will be added (playbook variable ``tantor_platform_workspace_name`` of ``group_vars`` ) and a token of Install type (playbook variable ``platform_workspace_name`` of group_vars ). In case of absence of the required Workspace or token - create new ones.
 
-```
-tantor_agent_nats_endpoint: server:4222
-```
-Connection address to the Nats server
+In the process of prepping the playbook for launch, all files to be looked at can be identified, using the symbols ``# ! #``. To do this, while in the directory of the downloaded project, execute:
 
-**Agent settings for registration in the Tantor Platform**
-```
-tantor_agent_workspace_name: test
-```
-the name of the workspace to which the database instance is added
-```
-tantor_agent_environment: SERVER
-```
-environment where the DBMS is running (SERVER, CONTAINER)
-```
-tantor_agent_db_type: PostgreSQL
-```
-Database type managed by the platform agent (PostgreSQL, TantorDB)
-
-```
-tantor_agent_host_ip: '1.2.3.4'
-```
-IP address of the database that will be used to connect to the DBMS
-
-```
-tantor_agent_host_port: 5432
-```
-DBMS port used for metrics collection by the agent
-
-```
-tantor_agent_db_name: postgres
-```
-Name of the database through which DBMS statistics and metrics are collected
-
-```
-tantor_agent_db_password: pma_user
-```
-database connection password
-
-```
-tantor_agent_db_user: pma_user
-```
-the user under whom the DBMS connection will be made
-
-```
-tantor_agent_managed_patroni: false
-```
-this DBMS is managed by Patroni
-```
-tantor_agent_patroni_ssl: false
-```
-type of connection to Patroni API
-
-```
-tantor_agent_patroni_host: '1.2.3.4'
-```
-connection ip address to Patroni API. The default address is used from the variable tantor_agent_host_ip
-```
-tantor_agent_patroni_port: 8008
-
-```
-connection port to Patroni API
-
-```
-tantor_agent_patroni_user: test_user
-```
-authentication parameters to Patroni API
-
-```
-tantor_agent_patroni_password: test_pass
-```
-authentication parameters to Patroni API
-
-
-
-Dependencies
-------------
-
-No dependencies
-
-Example Playbook
-----------------
-
-**installation on a database managed by Patroni**
-
-```
-    - hosts: databases
-      become: true
-      roles:
-         - { role: tantor_agent }
-```
-Inside group_vars/databases.yml:
-```
-tantor_agent_url: https://tantorlabs.ru
-tantor_agent_token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJwbWEiLCJleHAiOjE3MDM5NzAwMDAsImlhdCI6MTY5NTk5NTM5Niwic2NvcGUiOiJJTlNUQUxMIn0.BM0kXMJ1BEH4w7huyXqwgIeCPcWSAlmilhsMKpvyMMM
-tantor_agent_nats_endpoint: tantorlabs.ru:4222
-tantor_agent_install_mode: repo
-```
-Inside host_vars/pg01.yml:
-```
-tantor_agent_host_ip: "192.168.0.1"
-tantor_agent_workspace_name: test
-tantor_agent_environment: SERVER
-tantor_agent_db_type: PostgreSQL
-tantor_agent_host_port: 5432
-tantor_agent_db_name: postgres
-tantor_agent_managed_patroni: true
-tantor_agent_patroni_ssl: false
-tantor_agent_patroni_user: username
-tantor_agent_patroni_password: password
+```bash
+grep -r --exclude='*README*' '# ! #' ./* 
+./group_vars/all.yml:# ! ! #
+./host_vars/hostnameX.yml:# ! ! #
+./inventory_template:sample_group # ! ! # This template should be replaced with real group of hosts; When a new group is added (in section below) - it should be also added here;
+./inventory_template:[sample_group] # ! ! # Template group name
+./roles/tantor_agent/files/id_rsa.pub:# ! # Put you pub key here. I will be added to postgres user. Replace this line and leave just the public key in this file
 ```
 
-**installation on a database without Patroni**
+Fill in the files according to the instructions below:
 
-```
-    - hosts: databases
-      roles:
-         - { role: tantor_agent }
-```
-Inside group_vars/databases.yml:
+1. Using the example ``inventory_template`` file in the root directory of the playbook, create your own ``inventory``. Pay attention to the comments in the source file;
+2. Using the ``group_vars/all.yml`` file as an example, create and place a new file in the ``group_vars`` directory containing the variables for the node group from the ``inventory`` file (e.g., the ``sample_group.yml`` file for the ``sample_group`` group from ``inventory_template``);
+3. Fill the file created in step 2 above with the data relevant to the playbook launch in the required outline;
+4. If necessary, write the public key of the user, on behalf of whom the Playbook is launched, in the file ``roles/tantor_agent/files/id_rsa.pub``. This key will be added to the ``postgres`` user;
+5. If it is necessary to override variables at the node level, add a file with the name of this node and the extension ``.yml`` to the ``host_vars`` directory (for example, the file ``hostnameA.yml`` from ``inventory_template``).
+6. Replace the ``sample_group`` value from the ``agent.yml`` file with the group specified in the ``inventory`` file for which all tasks will be executed;
 
-```
-tantor_agent_url: https://tantorlabs.ru
-tantor_agent_token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJwbWEiLCJleHAiOjE3MDM5NzAwMDAsImlhdCI6MTY5NTk5NTM5Niwic2NvcGUiOiJJTlNUQUxMIn0.BM0kXMJ1BEH4w7huyXqwgIeCPcWSAlmilhsMKpvyMMM
-tantor_agent_nats_endpoint: tantorlabs.ru:4222
-tantor_agent_install_mode: repo
-```
-Inside host_vars/pg01.yml:
-```
-tantor_agent_host_ip: "192.168.0.1"
-tantor_agent_workspace_name: test
-tantor_agent_environment: SERVER
-tantor_agent_db_type: PostgreSQL
-tantor_agent_host_port: 5432
-tantor_agent_db_name: postgres
-```
+## Playbook launch
 
-License
--------
+The main variable file used by the playbook is ``group_vars/<file created in step 2 of the instructions above>.yml``. It is where the basic logic of the playbook is configured.
 
-BSD
-
-Author Information
-------------------
-
-This role was created in 2023 by Tantor Labs company
+---
+To start the playbook use the command:
+```bash
+ansible-playbook -i <path to inventory file> -l <group of nodes from inventory file> agent.yml -D
+```

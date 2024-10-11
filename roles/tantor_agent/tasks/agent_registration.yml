@@ -1,0 +1,829 @@
+---
+
+- name: Block for operation with the platform that should be performed once
+  run_once: true
+  become: false
+  block:
+    - name: Log in to the platform and get access token (JWT)
+      ansible.builtin.uri:
+        url: "{{ platform_url }}/api/login"
+        body_format: json
+        body:
+          login: "{{ platform_admin_username }}"
+          password: "{{ platform_admin_password }}"
+        return_content: true
+        validate_certs: "{{ platform_validate_certs }}"
+        method: "POST"
+        headers:
+          accept: "application/json, text/plain, */*"
+          content-type: "application/json"
+        status_code: [200]
+      register: login_response
+      delegate_to: localhost
+
+    - name: Set access token fact (JWT)
+      ansible.builtin.set_fact:
+        access_token: "{{ login_response.json.accessToken }}"
+
+    # Получаем список тенантов
+    - name: Get list of tenants
+      ansible.builtin.uri:
+        url: "{{ platform_url }}/api/tenants?page=1&limit=50"
+        headers:
+          Authorization: "Bearer {{ access_token }}"
+          accept: "application/json"
+        validate_certs: "{{ platform_validate_certs }}"
+        method: "GET"
+        return_content: true
+        status_code: [200]
+      register: tenants_response
+      delegate_to: localhost
+
+    # Переключаемся на нужный тенант и получаем новый токен
+    - name: Switch to tenant and get tenant token
+      ansible.builtin.uri:
+        url: "{{ platform_url }}/api/current_user/session/tenant/{{ platform_tenant_id }}"
+        headers:
+          Authorization: "Bearer {{ access_token }}"
+          accept: "application/json"
+        validate_certs: "{{ platform_validate_certs }}"
+        method: "POST"
+        return_content: true
+        status_code: [200]
+      register: tenant_token_response
+      delegate_to: localhost
+
+    - name: Set tenant token fact
+      ansible.builtin.set_fact:
+        tenant_token: "{{ tenant_token_response.json.accessToken }}"
+
+    # Создаём установочный токен доступа
+    - name: Create installation token
+      ansible.builtin.uri:
+        url: "{{ platform_url }}/api/integrations/tokens"
+        headers:
+          Authorization: "Bearer {{ tenant_token }}"
+          accept: "application/json, text/plain, */*"
+        validate_certs: "{{ platform_validate_certs }}"
+        method: "POST"
+        body_format: json
+        body:
+          name: "Ansible token"
+          expiresAt: "{{ (ansible_date_time.iso8601 | regex_replace('T.*', '')) }}T20:59:59Z"
+          scope: "INSTALL"
+        return_content: true
+        status_code: [200]
+      register: platform_token_response
+      delegate_to: localhost
+
+    - name: Set installation platform token fact
+      ansible.builtin.set_fact:
+        platform_token: "{{ platform_token_response.json.tokenString }}"
+
+    - name: Get platform version
+      when: agent_install_mode == "local"
+      ansible.builtin.uri:
+        url: "{{ platform_url }}/api/version"
+        method: "GET"
+        return_content: true
+        validate_certs: "{{ platform_validate_certs }}"
+        headers:
+          Authorization: "Bearer {{ tenant_token }}"
+        status_code: [200]
+      register: platform_version_response
+      delegate_to: localhost
+
+    - name: Register platform version
+      when: agent_install_mode == "local"
+      ansible.builtin.set_fact:
+        platform_version: "{{ platform_version_response.json.version }}"
+
+    - name: Get List of existing workspaces
+      ansible.builtin.uri:
+        url: "{{ platform_url }}/api/workspaces"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ tenant_token }}"
+          Accept: "application/json, text/plain, */*"
+          Content-Type: "application/json"
+        validate_certs: "{{ platform_validate_certs }}"
+        body_format: json
+        body: []
+        status_code: [200, 201]
+        return_content: true
+      delegate_to: localhost
+      register: list_of_workspaces
+
+    - name: Check if the workspace already exists
+      ansible.builtin.set_fact:
+        workspace_exists: >-
+          {{
+            list_of_workspaces.json.results
+            | selectattr('workspaceName', 'equalto', platform_workspace_name)
+            | list
+            | length > 0
+          }}
+
+    - name: Create a new workspace
+      ansible.builtin.uri:
+        url: "{{ platform_url }}/api/workspaces"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ tenant_token }}"
+          Accept: "application/json, text/plain, */*"
+          Content-Type: "application/json"
+        validate_certs: "{{ platform_validate_certs }}"
+        body_format: json
+        body:
+          workspaceName: "{{ platform_workspace_name }}"
+        status_code: [200, 201]
+        return_content: true
+      delegate_to: localhost
+      when: not workspace_exists
+
+- name: Check Agent state
+  ansible.builtin.uri:
+    url: "{{ platform_url }}/integration/agents/register/check"
+    body_format: json
+    body:
+      host: "{{ database_ip }}"
+    return_content: true
+    validate_certs: "{{ platform_validate_certs }}"
+    method: "POST"
+    headers:
+      Authorization: "Bearer {{ platform_token }}"
+    status_code: [422, 200]
+  become: false
+  register: response
+  delegate_to: localhost
+
+- name: Set patroni cluster IPs
+  ansible.builtin.set_fact:
+    patroni_cluster_hosts: "{{ ansible_play_hosts_all | map('extract', hostvars, ['ansible_default_ipv4', 'address']) | join(',') }}"
+  when: ansible_play_hosts_all | length > 0
+
+- name: Check if postgresql node is in master state
+  ansible.builtin.shell: >
+    {% if ((database_user is defined) and (database_user != "") and (database_password is defined) and (database_password != "")) %}
+    PGPASSWORD={{ database_password }}
+    {% endif %}
+    psql
+    -p {{ database_port }}
+    -d {{ database_name }}
+    {% if ((database_user is defined) and (database_user != "") and (database_password is defined) and (database_password != "")) %}
+    -U {{ database_user }}
+    {% endif %}
+    -c "SELECT pg_is_in_recovery();" -tA
+  register: psql_node_status
+  become: true
+  become_user: "{{ database_psql_user | d('postgres', true) }}"
+  become_flags: "-i"
+  changed_when: false
+
+- name: Block for platform with version less then 5.0.0
+  when:
+    - "platform_version is version('5.0.0', '<', version_type='semver')"
+  block:
+    - name: Check if superuser role exists in system
+      when: psql_node_status.stdout == "f"
+      ansible.builtin.shell: >
+        {% if ((database_user is defined) and (database_user != "") and (database_password is defined) and (database_password != "")) %}
+        PGPASSWORD={{ database_password }}
+        {% endif %}
+        psql
+        -p {{ database_port }}
+        -d {{ database_name }}
+        {% if ((database_user is defined) and (database_user != "") and (database_password is defined) and (database_password != "")) %}
+        -U {{ database_user }}
+        {% endif %}
+        -c "\\du"
+        -tA
+      become: true
+      become_user: "{{ database_psql_user | d('postgres', true) }}"
+      become_flags: "-i"
+      register: psql_userlist
+      changed_when: false
+
+    - name: Check for presence of needed superuser in roles
+      when: psql_node_status.stdout == "f"
+      ansible.builtin.set_fact:
+        superuser_exists: >-
+          {{
+            (agent_db_user + '|Суперпользователь') in psql_userlist.stdout or (agent_db_user + '|Superuser') in psql_userlist.stdout
+          }}
+
+    - name: Create superuser role if not exists in system
+      when:
+        - psql_node_status.stdout == "f"
+        - not superuser_exists
+      # noqa no-changed-when
+      ansible.builtin.shell: >
+        {% if ((database_user is defined) and (database_user != "") and (database_password is defined) and (database_password != "")) %}
+        PGPASSWORD={{ database_password }}
+        {% endif %}
+        psql
+        -p {{ database_port }}
+        -d {{ database_name }}
+        {% if ((database_user is defined) and (database_user != "") and (database_password is defined) and (database_password != "")) %}
+        -U {{ database_user }}
+        {% endif %}
+        -c "CREATE ROLE {{ agent_db_user }} WITH SUPERUSER LOGIN PASSWORD '{{ agent_db_password }}' CONNECTION LIMIT 5;"
+        -tA
+      become: true
+      become_user: "{{ database_psql_user | d('postgres', true) }}"
+      become_flags: "-i"
+
+- name: Block for DB modification (database_settings_change set to true)
+  when:
+    - database_settings_change is true
+    - database_managed_patroni is false
+    - "platform_version is version('5.0.0', '<', version_type='semver')"
+  block:
+    - name: Find path of pg_hba.conf
+      ansible.builtin.shell: >
+        {% if ((database_user is defined) and (database_user != "") and (database_password is defined) and (database_password != "")) %}
+        PGPASSWORD={{ database_password }}
+        {% endif %}
+        psql
+        -p {{ database_port }}
+        -d {{ database_name }}
+        {% if ((database_user is defined) and (database_user != "") and (database_password is defined) and (database_password != "")) %}
+        -U {{ database_user }}
+        {% endif %}
+        -c "show hba_file;"
+        -tA
+      register: pg_hba_file_path
+      become: true
+      become_user: "{{ database_psql_user | d('postgres', true) }}"
+      become_flags: "-i"
+      changed_when: false
+
+    - name: Find path of postgresql.conf
+      ansible.builtin.shell: >
+        {% if ((database_user is defined) and (database_user != "") and (database_password is defined) and (database_password != "")) %}
+        PGPASSWORD={{ database_password }}
+        {% endif %}
+        psql
+        -p {{ database_port }}
+        -d {{ database_name }}
+        {% if ((database_user is defined) and (database_user != "") and (database_password is defined) and (database_password != "")) %}
+        -U {{ database_user }}
+        {% endif %}
+        -c "show config_file;"
+        -tA
+      register: postgresql_conf_path
+      become: true
+      become_user: "{{ database_psql_user | d('postgres', true) }}"
+      become_flags: "-i"
+      changed_when: false
+
+    - name: Insert values from database_pg_hba_settings into pg_hba.conf
+      ansible.builtin.blockinfile:
+        path: "{{ pg_hba_file_path.stdout }}"
+        block: |
+            {% for item in database_pg_hba_settings %}
+            {{ item }}
+            {% endfor %}
+        insertafter: '# TYPE  DATABASE        USER            ADDRESS                 METHOD'
+      register: pg_hba_result
+
+    - name: Configure listen_addresses in postgresql.conf
+      ansible.builtin.replace:
+        path: "{{ postgresql_conf_path.stdout }}"
+        regexp: '.*listen_addresses\s*=\s*.*'
+        replace: "listen_addresses = '{{ database_listen_address_settings }}'"
+        mode: "0600"
+        backup: true
+      register: listen_address_result
+
+- name: Restart DBMS TantorDB
+  when:
+    - database_vendor == "tantor"
+    - database_managed_patroni is false
+    - listen_address_result.changed or pg_hba_result.changed
+  ansible.builtin.systemd_service:
+    name: tantor-{{ database_tantor_redaction }}-server-{{ database_version }}
+    daemon_reload: true
+    state: restarted
+
+- name: Collect installed PostgreSQL version
+  when:
+    - database_vendor == "postgresql"
+    - database_managed_patroni is false
+  # noqa command-instead-of-module
+  ansible.builtin.shell:
+    cmd: >
+      set -o pipefail &&
+      systemctl list-units --type=service --state=active |
+      grep --extended-regexp 'postgresql(@|(-|)){{ database_version }}(-|@|)|postgres(-|){{ database_version }}(-|@|)' |
+      awk '{print $1}'
+  register: pg_service_name
+  changed_when: false
+
+- name: Restart DBMS PostgreSQL
+  when:
+    - database_vendor == "postgresql"
+    - database_managed_patroni is false
+    - listen_address_result.changed or pg_hba_result.changed
+  ansible.builtin.systemd_service:
+    name: "{{ pg_service_name.stdout.strip() }}"
+    state: restarted
+
+- name: Block for DB preparation patroni-managed DBMS
+  when:
+    - database_managed_patroni is true
+    - database_settings_change is true
+    - "platform_version is version('5.0.0', '<', version_type='semver')"
+  block:
+
+    - name: Block for changing patroni-managed DBMS
+      block:
+        - name: Set validate_certs based on database_patroni_ssl
+          ansible.builtin.set_fact:
+            validate_certs_value: "{{ database_patroni_ssl | d(false) | bool }}"
+
+        - name: Get current Patroni configuration using API
+          ansible.builtin.uri:
+            url: >-
+              {% if database_patroni_ssl is true %}
+              https://{{ ansible_hostname }}:{{ database_patroni_port }}/config
+              {% else %}
+              http://{{ ansible_default_ipv4.address }}:{{ database_patroni_port }}/config
+              {% endif %}
+            method: GET
+            user: "{{ database_patroni_user }}"
+            password: "{{ database_patroni_password }}"
+            force_basic_auth: true
+            return_content: true
+            validate_certs: "{{ validate_certs_value }}"
+            client_cert: "{{ database_patroni_api_cert if validate_certs_value else omit }}"
+            client_key: "{{ database_patroni_api_key if validate_certs_value else omit }}"
+            ca_path: "{{ database_patroni_api_ca if validate_certs_value else omit }}"
+          register: current_patroni_config
+          changed_when: false
+
+        - name: Set updated pg_hba configuration
+          ansible.builtin.set_fact:
+            updated_pg_hba: >-
+              {{
+                current_patroni_config.json.postgresql.pg_hba +
+                (
+                  database_pg_hba_settings
+                  | reject('in', current_patroni_config.json.postgresql.pg_hba)
+                  | list
+                )
+              }}
+
+        - name: Update Patroni configuration using API
+          when:
+            - updated_pg_hba | difference(current_patroni_config.json.postgresql.pg_hba) | length > 0
+            - psql_node_status.stdout == "f"
+          ansible.builtin.uri:
+            url: >-
+              {% if database_patroni_ssl is true %}
+              https://{{ ansible_hostname }}:{{ database_patroni_port }}/config
+              {% else %}
+              http://{{ ansible_default_ipv4.address }}:{{ database_patroni_port }}/config
+              {% endif %}
+            force_basic_auth: true
+            method: PATCH
+            user: "{{ database_patroni_user }}"
+            password: "{{ database_patroni_password }}"
+            body_format: json
+            headers:
+              Content-Type: "application/json"
+            body: >
+              {
+                "postgresql": {
+                  "pg_hba": {{ updated_pg_hba | to_json }}
+                }
+              }
+            status_code: 200
+            validate_certs: "{{ validate_certs_value }}"
+            client_cert: "{{ database_patroni_api_cert if validate_certs_value else omit }}"
+            client_key: "{{ database_patroni_api_key if validate_certs_value else omit }}"
+            ca_path: "{{ database_patroni_api_ca if validate_certs_value else omit }}"
+
+        - name: Check if patroni cluster needs a restart using API
+          ansible.builtin.uri:
+            url: >-
+              {% if database_patroni_ssl is true %}
+              https://{{ ansible_hostname }}:{{ database_patroni_port }}/config
+              {% else %}
+              http://{{ ansible_default_ipv4.address }}:{{ database_patroni_port }}/config
+              {% endif %}
+            method: GET
+            user: "{{ database_patroni_user }}"
+            password: "{{ database_patroni_password }}"
+            force_basic_auth: true
+            return_content: true
+            validate_certs: "{{ validate_certs_value }}"
+            client_cert: "{{ database_patroni_api_cert if validate_certs_value else omit }}"
+            client_key: "{{ database_patroni_api_key if validate_certs_value else omit }}"
+            ca_path: "{{ database_patroni_api_ca if validate_certs_value else omit }}"
+          register: restart_status
+
+        - name: Restart Patroni using API
+          when:
+            - restart_status.json.pending_restart | d(false)
+            - psql_node_status.stdout == "f"
+          ansible.builtin.uri:
+            url: >-
+              {% if database_patroni_ssl is true %}
+              https://{{ ansible_hostname }}:{{ database_patroni_port }}/restart
+              {% else %}
+              http://{{ ansible_default_ipv4.address }}:{{ database_patroni_port }}/restart
+              {% endif %}
+            method: POST
+            user: "{{ database_patroni_user }}"
+            password: "{{ database_patroni_password }}"
+            force_basic_auth: true
+            body_format: json
+            headers:
+              Content-Type: "application/json"
+            body: '{"restart_pending": true}'
+            status_code: 200
+            validate_certs: "{{ validate_certs_value }}"
+            client_cert: "{{ database_patroni_api_cert if validate_certs_value else omit }}"
+            client_key: "{{ database_patroni_api_key if validate_certs_value else omit }}"
+            ca_path: "{{ database_patroni_api_ca if validate_certs_value else omit }}"
+
+- name: Block for platform less or equial to 3.2.2
+  when:
+    - response.json.code != 'WORKSPACE.AGENT.CHECK.EXISTS'
+    - "platform_version is version('3.2.2', '<=', version_type='semver')"
+  block:
+    - name: Register agent managed by Patroni on master node | platform_version <= 3.2.2
+      when:
+        - database_managed_patroni is true
+        - psql_node_status.stdout == "f"
+      ansible.builtin.command: |
+        pmaagent register
+        --access-token '{{ platform_token }}'
+        --db-user '{{ agent_db_user }}'
+        --db-password '{{ agent_db_password }}'
+        --host '{{ database_ip }}'
+        --patroni-endpoint '{{ database_patroni_host | d(database_ip) }}:{{ database_patroni_port }}'
+        --patroni-user '{{ database_patroni_user }}'
+        --patroni-password '{{ database_patroni_password }}'
+        --type '{% if database_vendor == "tantor" %}TantorDB{% elif database_vendor == "postgresql" %}PostgreSQL{% endif %}'
+        --workspace-name '{{ platform_workspace_name }}'
+        --nats-endpoint '{{ platform_nats_endpoint }}'
+      register: install_result
+      notify: Restart pmaagent
+      failed_when: install_result.stderr != ""
+      changed_when:
+        - "install_result.stdout is regex ('Agent successfully registered')"
+
+    - name: Register agent managed by Patroni on replica nodes | platform_version <= 3.2.2
+      when:
+        - database_managed_patroni is true
+        - psql_node_status.stdout == "t"
+      ansible.builtin.command: |
+        pmaagent register
+        --access-token '{{ platform_token }}'
+        --db-user '{{ agent_db_user }}'
+        --db-password '{{ agent_db_password }}'
+        --host '{{ database_ip }}'
+        --patroni-endpoint '{{ database_patroni_host | d(database_ip) }}:{{ database_patroni_port }}'
+        --patroni-user '{{ database_patroni_user }}'
+        --patroni-password '{{ database_patroni_password }}'
+        --type '{% if database_vendor == "tantor" %}TantorDB{% elif database_vendor == "postgresql" %}PostgreSQL{% endif %}'
+        --workspace-name '{{ platform_workspace_name }}'
+        --nats-endpoint '{{ platform_nats_endpoint }}'
+      register: install_result
+      notify: Restart pmaagent
+      failed_when: install_result.stderr != ""
+      changed_when:
+        - "install_result.stdout is regex ('Agent successfully registered')"
+
+    - name: Register agent without Patroni on master node | platform_version <= 3.2.2
+      when:
+        - database_managed_patroni is false
+        - psql_node_status.stdout == "f"
+      ansible.builtin.command: |
+        pmaagent register
+        --access-token '{{ platform_token }}'
+        --db-user '{{ agent_db_user }}'
+        --db-password '{{ agent_db_password }}'
+        --host '{{ database_ip }}'
+        --type '{% if database_vendor == "tantor" %}TantorDB{% elif database_vendor == "postgresql" %}PostgreSQL{% endif %}'
+        --workspace-name '{{ platform_workspace_name }}'
+        --nats-endpoint '{{ platform_nats_endpoint }}'
+      register: install_result
+      notify: Restart pmaagent
+      failed_when: install_result.stderr != ""
+      changed_when:
+        - "install_result.stdout is regex ('Agent successfully registered')"
+
+    - name: Register agent without Patroni on replica nodes | platform_version <= 3.2.2
+      when:
+        - database_managed_patroni is false
+        - psql_node_status.stdout == "t"
+      ansible.builtin.command: |
+        pmaagent register
+        --access-token '{{ platform_token }}'
+        --db-user '{{ agent_db_user }}'
+        --db-password '{{ agent_db_password }}'
+        --host '{{ database_ip }}'
+        --type '{% if database_vendor == "tantor" %}TantorDB{% elif database_vendor == "postgresql" %}PostgreSQL{% endif %}'
+        --workspace-name '{{ platform_workspace_name }}'
+        --nats-endpoint '{{ platform_nats_endpoint }}'
+      register: install_result
+      notify: Restart pmaagent
+      failed_when: install_result.stderr != ""
+      changed_when:
+        - "install_result.stdout is regex ('Agent successfully registered')"
+
+- name: Block for platform more or equal to 3.3.0 but less then 5.0.0
+  when:
+    - "platform_version is version('3.3.0', '>=', version_type='semver')"
+    - "platform_version is version('5.0.0', '<', version_type='semver')"
+    - response.json.code != 'WORKSPACE.AGENT.CHECK.EXISTS'
+  block:
+    - name: Register agent | platform >= 3.3.0 < 5.0.0
+      ansible.builtin.command: |
+        pmaagent register
+        --access-token '{{ platform_token }}'
+        --host '{{ database_ip }}'
+        --workspace-name '{{ platform_workspace_name }}'
+        --endpoint '{{ platform_nats_endpoint }}'
+      register: install_result
+      notify: Restart pmaagent
+      failed_when: install_result.stderr != ""
+      changed_when:
+        - "install_result.stdout is regex ('Agent successfully registered')"
+
+    - name: Instance add with Patroni on master node | platform >= 3.3.0 < 5.0.0
+      when:
+        - database_managed_patroni is true
+        - psql_node_status.stdout == "f"
+      ansible.builtin.command: |
+        pmaagent instances add
+        --name '{{ database_ip }}'
+        --environment '{{ agent_environment }}'
+        --type '{% if database_vendor == "tantor" %}TantorDB{% elif database_vendor == "postgresql" %}PostgreSQL{% endif %}'
+        --db-host '{{ database_ip }}'
+        --db-port '{{ database_port }}'
+        --db-user '{{ agent_db_user }}'
+        --db-pass '{{ agent_db_password }}'
+        --patroni-host '{{ database_patroni_host | d(database_ip) }}'
+        --patroni-port '{{ database_patroni_port }}'
+        {% if validate_certs_value | d(false) | bool %}
+        --patroni-ssl
+        {%endif %}
+        --patroni-user '{{ database_patroni_user }}'
+        --patroni-password '{{ database_patroni_password }}'
+        --confirm
+      register: install_result
+      notify: Restart pmaagent
+      failed_when:
+        - install_result.rc != 0
+        - "install_result.stderr is not regex('Instance with the provided host .* and port .* exists')"
+        - "install_result.stderr is not regex('Instance with the provided port .* exists')"
+      changed_when:
+        - "install_result.stdout is regex ('Instance .* has been added successfully')"
+
+    - name: Instance add with Patroni on replica nodes | platform >= 3.3.0 < 5.0.0
+      when:
+        - database_managed_patroni is true
+        - psql_node_status.stdout == "t"
+      ansible.builtin.command: |
+        pmaagent instances add
+        --name '{{ database_ip }}'
+        --environment '{{ agent_environment }}'
+        --type '{% if database_vendor == "tantor" %}TantorDB{% elif database_vendor == "postgresql" %}PostgreSQL{% endif %}'
+        --db-host '{{ database_ip }}'
+        --db-port '{{ database_port }}'
+        --db-user '{{ agent_db_user }}'
+        --db-pass '{{ agent_db_password }}'
+        --patroni-host '{{ database_patroni_host | d(database_ip) }}'
+        --patroni-port '{{ database_patroni_port }}'
+        {% if validate_certs_value | d(false) | bool %}
+        --patroni-ssl
+        {%endif %}
+        --patroni-user '{{ database_patroni_user }}'
+        --patroni-password '{{ database_patroni_password }}'
+        --confirm
+      register: install_result
+      notify: Restart pmaagent
+      failed_when:
+        - install_result.rc != 0
+        - "install_result.stderr is not regex('Instance with the provided host .* and port .* exists')"
+        - "install_result.stderr is not regex('Instance with the provided port .* exists')"
+      changed_when:
+        - "install_result.stdout is regex ('Instance .* has been added successfully')"
+
+    - name: Instance add without Patroni on master node | platform >= 3.3.0 < 5.0.0
+      when:
+        - database_managed_patroni is false
+        - psql_node_status.stdout == "f"
+      ansible.builtin.command: |
+        pmaagent instances add
+        --name '{{ database_ip }}'
+        --environment '{{ agent_environment }}'
+        --type '{% if database_vendor == "tantor" %}TantorDB{% elif database_vendor == "postgresql" %}PostgreSQL{% endif %}'
+        --db-host '{{ database_ip }}'
+        --db-port '{{ database_port }}'
+        --db-user '{{ agent_db_user }}'
+        --db-pass '{{ agent_db_password }}'
+        --confirm
+      register: install_result
+      notify: Restart pmaagent
+      failed_when:
+        - install_result.rc != 0
+        - "install_result.stderr is not regex('Instance with the provided host .* and port .* exists')"
+        - "install_result.stderr is not regex('Instance with the provided port .* exists')"
+      changed_when:
+        - "install_result.stdout is regex ('Instance .* has been added successfully')"
+
+    - name: Instance add without Patroni on replica nodes | platform >= 3.3.0 < 5.0.0
+      when:
+        - database_managed_patroni is false
+        - psql_node_status.stdout == "t"
+      ansible.builtin.command: |
+        pmaagent instances add
+        --name '{{ database_ip }}'
+        --environment '{{ agent_environment }}'
+        --type '{% if database_vendor == "tantor" %}TantorDB{% elif database_vendor == "postgresql" %}PostgreSQL{% endif %}'
+        --db-host '{{ database_ip }}'
+        --db-port '{{ database_port }}'
+        --db-user '{{ agent_db_user }}'
+        --db-pass '{{ agent_db_password }}'
+        --confirm
+      register: install_result
+      notify: Restart pmaagent
+      failed_when:
+        - install_result.rc != 0
+        - "install_result.stderr is not regex('Instance with the provided host .* and port .* exists')"
+        - "install_result.stderr is not regex('Instance with the provided port .* exists')"
+      changed_when:
+        - "install_result.stdout is regex ('Instance .* has been added successfully')"
+
+- name: Block for platform version more then 5.0.0
+  when:
+    - "platform_version is version('5.0.0', '>=', version_type='semver')"
+    - response.json.code != 'WORKSPACE.AGENT.CHECK.EXISTS'
+  block:
+    - name: Register agent | platform >= 5.0.0
+      ansible.builtin.command: |
+        pmaagent register
+        --access-token '{{ platform_token }}'
+        --host '{{ database_ip }}'
+        --workspace-name '{{ platform_workspace_name }}'
+        --endpoint '{{ platform_nats_endpoint }}'
+      register: install_result
+      notify: Restart pmaagent
+      failed_when: install_result.stderr != ""
+      changed_when:
+        - "install_result.stdout is regex ('Agent successfully registered')"
+
+    - name: Instance add with Patroni on master node | platform >= 5.0.0
+      when:
+        - database_managed_patroni is true
+        - psql_node_status.stdout == "f"
+      ansible.builtin.command: |
+        pmaagent instances add
+        --name '{{ database_ip }}'
+        --environment '{{ agent_environment }}'
+        --type '{% if database_vendor == "tantor" %}TantorDB{% elif database_vendor == "postgresql" %}PostgreSQL{% endif %}'
+        {% if database_password | default("") | length > 0 %}
+        --db-host '{{ database_ip }}'
+        {% endif %}
+        --db-port '{{ database_port }}'
+        --db-user '{{ agent_db_user }}'
+        --db-pass '{{ agent_db_password }}'
+        {% if database_password | default("") | length > 0 %}        
+        --db-admin-user '{{ database_user }}'
+        --db-admin-pass '{{ database_password }}'
+        {% endif %}
+        --patroni-host '{{ database_patroni_host | d(database_ip) }}'
+        --patroni-cluster-hosts '{{ patroni_cluster_hosts }}'
+        --patroni-port '{{ database_patroni_port }}'
+        {% if validate_certs_value | d(false) | bool %}
+        --patroni-ssl
+        {%endif %}
+        --patroni-user '{{ database_patroni_user }}'
+        --patroni-password '{{ database_patroni_password }}'
+        --confirm
+      register: install_result
+      notify: Restart pmaagent
+      failed_when:
+        - install_result.rc != 0
+        - "install_result.stderr is not regex('Instance with the provided host .* and port .* exists')"
+        - "install_result.stderr is not regex('Instance with the provided port .* exists')"
+      changed_when:
+        - "install_result.stdout is regex ('Instance .* has been added successfully')"
+
+    - name: Instance add with Patroni on replica nodes | platform >= 5.0.0
+      when:
+        - database_managed_patroni is true
+        - psql_node_status.stdout == "t"
+      ansible.builtin.command: |
+        pmaagent instances add
+        --name '{{ database_ip }}'
+        --environment '{{ agent_environment }}'
+        --type '{% if database_vendor == "tantor" %}TantorDB{% elif database_vendor == "postgresql" %}PostgreSQL{% endif %}'
+        {% if database_password | default("") | length > 0 %}
+        --db-host '{{ database_ip }}'
+        {% endif %}
+        --db-port '{{ database_port }}'
+        --db-user '{{ agent_db_user }}'
+        --db-pass '{{ agent_db_password }}'
+        {% if database_password | default("") | length > 0 %}        
+        --db-admin-user '{{ database_user }}'
+        --db-admin-pass '{{ database_password }}'
+        {% endif %}
+        --patroni-host '{{ database_patroni_host | d(database_ip) }}'
+        --patroni-port '{{ database_patroni_port }}'
+        {% if validate_certs_value | d(false) | bool %}
+        --patroni-ssl
+        {%endif %}
+        --patroni-user '{{ database_patroni_user }}'
+        --patroni-password '{{ database_patroni_password }}'
+        --confirm
+      register: install_result
+      notify: Restart pmaagent
+      failed_when:
+        - install_result.rc != 0
+        - "install_result.stderr is not regex('Instance with the provided host .* and port .* exists')"
+        - "install_result.stderr is not regex('Instance with the provided port .* exists')"
+      changed_when:
+        - "install_result.stdout is regex ('Instance .* has been added successfully')"
+
+    - name: Instance add without Patroni on master node | platform >= 5.0.0
+      when:
+        - database_managed_patroni is false
+        - psql_node_status.stdout == "f"
+      ansible.builtin.command: |
+        pmaagent instances add
+        --name '{{ database_ip }}'
+        --environment '{{ agent_environment }}'
+        --type '{% if database_vendor == "tantor" %}TantorDB{% elif database_vendor == "postgresql" %}PostgreSQL{% endif %}'
+        --db-host '{{ database_ip }}'
+        --db-port '{{ database_port }}'
+        --db-user '{{ agent_db_user }}'
+        --db-pass '{{ agent_db_password }}'
+        --confirm
+      register: install_result
+      notify: Restart pmaagent
+      failed_when:
+        - install_result.rc != 0
+        - "install_result.stderr is not regex('Instance with the provided host .* and port .* exists')"
+        - "install_result.stderr is not regex('Instance with the provided port .* exists')"
+      changed_when:
+        - "install_result.stdout is regex ('Instance .* has been added successfully')"
+
+    - name: Instance add without Patroni on replica nodes | platform >= 5.0.0
+      when:
+        - database_managed_patroni is false
+        - psql_node_status.stdout == "t"
+      ansible.builtin.command: |
+        pmaagent instances add
+        --name '{{ database_ip }}'
+        --environment '{{ agent_environment }}'
+        --type '{% if database_vendor == "tantor" %}TantorDB{% elif database_vendor == "postgresql" %}PostgreSQL{% endif %}'
+        --db-host '{{ database_ip }}'
+        --db-port '{{ database_port }}'
+        --db-user '{{ agent_db_user }}'
+        --db-pass '{{ agent_db_password }}'
+        --confirm
+      register: install_result
+      notify: Restart pmaagent
+      failed_when:
+        - install_result.rc != 0
+        - "install_result.stderr is not regex('Instance with the provided host .* and port .* exists')"
+        - "install_result.stderr is not regex('Instance with the provided port .* exists')"
+      changed_when:
+        - "install_result.stdout is regex ('Instance .* has been added successfully')"
+
+- name: Cleanup process
+  become: false
+  run_once: true
+  block:
+    - name: Find installation tokens by name
+      ansible.builtin.uri:
+        url: "{{ platform_url }}/api/integrations/tokens?limit=10&page=1&sort=asc:apiKeyID&name=contains(Ansible%20token)"
+        headers:
+          Authorization: "Bearer {{ tenant_token }}"
+          accept: "application/json, text/plain, */*"
+        validate_certs: "{{ platform_validate_certs }}"
+        method: "GET"
+        return_content: true
+        status_code: [200]
+      register: tokens_list_response
+      delegate_to: localhost
+
+    - name: Delete installation tokens
+      ansible.builtin.uri:
+        url: "{{ platform_url }}/api/integrations/tokens/{{ item.apiKeyID }}"
+        headers:
+          Authorization: "Bearer {{ tenant_token }}"
+          accept: "application/json, text/plain, */*"
+        validate_certs: "{{ platform_validate_certs }}"
+        method: "DELETE"
+        status_code: [200, 204]
+      loop: "{{ tokens_list_response.json.results | selectattr('name', 'equalto', 'Ansible token') | list }}"
+      loop_control:
+        label: "{{ item.apiKeyID }}"
+      delegate_to: localhost

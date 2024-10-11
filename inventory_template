@@ -1,0 +1,31 @@
+[all:children]
+sample_group # ! # This template should be replaced with real group of hosts; When a new group is added (in section below) - it should be also added here;
+sample_group1
+...
+etc
+
+[sample_group] # ! # Template group name
+hostnameA ansible_host=aaa.aaa.aaa.aaa ansible_user=sample_user
+hostnameB ansible_host=bbb.bbb.bbb.bbb ansible_user=sample_user
+hostnameC ansible_host=ccc.ccc.ccc.ccc ansible_user=sample_user
+
+[sample_group1]
+hostnameD ansible_host=ddd.ddd.ddd.ddd ansible_user=sample_user
+hostnameE ansible_host=eee.eee.eee.eee ansible_user=sample_user
+hostnameF ansible_host=fff.fff.fff.fff ansible_user=sample_user
+
+...
+[etc]
+hostnameX ansible_host=xxx.xxx.xxx.xxx ansible_user=sample_user
+hostnameY ansible_host=yyy.yyy.yyy.yyy ansible_user=sample_user
+hostnameZ ansible_host=zzz.zzz.zzz.zzz ansible_user=sample_user
+
+
+### Comments for inventory file
+# A group is a collection of hosts\servers (e.g. hostnameA-C for group sample_group). 
+# In current template the groups are sample_group, sample_group1, etc;
+# All new groups should match the pattern above;
+# All new groups should be added into [all:children] parent group;
+# hostname[X-Z] - Name of server;
+# ansible_host - Needed in case if hostname[X-Z] cannot be resolved by name;
+# ansible_user - Useraccount that has access to host with passwordless root access;

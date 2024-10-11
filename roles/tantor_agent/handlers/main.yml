@@ -1,4 +1,4 @@
-# handlers file for tantor_plaftorm
+# handlers file for plaftorm
 
 - name: Cleanup files from filesystem
   ansible.builtin.file:
@@ -10,7 +10,13 @@
     - /tmp/pmaagent.log
 
 - name: Restart pmaagent
-  ansible.builtin.systemd:
+  ansible.builtin.systemd_service:
     name: pmaagent
+    daemon_reload: true
+    state: restarted
+
+- name: Restart chrony
+  ansible.builtin.systemd_service:
+    name: chrony
     daemon_reload: true
     state: restarted

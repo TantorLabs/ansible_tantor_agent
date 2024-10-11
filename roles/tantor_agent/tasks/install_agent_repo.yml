@@ -1,6 +1,6 @@
 - name: Add repo key
   ansible.builtin.apt_key:
-    url: https://{{ tantor_agent_repo_key }}/tantorlabs.ru.asc
+    url: https://{{ agent_repo_key }}/tantorlabs.ru.asc
     state: present
   when: ansible_os_family in ("Debian", "Astra Linux")
 
@@ -9,22 +9,22 @@
     name: tantorlabs_platform
     description: Tantorlabs YUM repo
     file: tantorlabs_platform
-    baseurl: https://{{ tantor_agent_repo }}/repository/yum-packages/
-    gpgcheck: yes
-    gpgkey: https://{{ tantor_agent_repo_key }}/tantorlabs.ru.asc
-  when: ansible_os_family in ("RedHat")
+    baseurl: https://{{ agent_repo }}/repository/yum-packages/
+    gpgcheck: true
+    gpgkey: https://{{ agent_repo_key }}/tantorlabs.ru.asc
+  when: ansible_os_family in ("RedHat", "RED")
 
 - name: Install Apt repo
   ansible.builtin.apt_repository:
-    repo: "deb [arch=amd64] https://{{ tantor_agent_repo }}/repository/apt-packages tantorlabs main"
+    repo: "deb [arch=amd64] https://{{ agent_repo }}/repository/apt-packages tantorlabs main"
     filename: tantorlabs_platform
     state: present
   when: ansible_os_family in ("Debian", "Astra Linux")
 
 - name: Install apt package pmaagent
   ansible.builtin.apt:
-    name: "pmaagent={{tantor_agent_version}}"
-    update_cache: yes
+    name: "pmaagent={{ agent_version }}"
+    update_cache: true
     allow_downgrade: true
     state: present
   notify: Restart pmaagent
@@ -32,9 +32,9 @@
 
 - name: Install yum package pmaagent
   ansible.builtin.yum:
-    name: "pmaagent={{tantor_agent_version}}"
-    update_cache: yes
+    name: "pmaagent-{{ agent_version }}"
+    update_cache: true
     allow_downgrade: true
     state: present
   notify: Restart pmaagent
-  when: ansible_os_family in ("RedHat")
+  when: ansible_os_family in ("RedHat", "RED")
