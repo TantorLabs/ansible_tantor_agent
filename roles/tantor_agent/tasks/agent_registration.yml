@@ -687,12 +687,16 @@
         --name '{{ database_ip }}'
         --environment '{{ agent_environment }}'
         --type '{% if database_vendor == "tantor" %}TantorDB{% elif database_vendor == "postgresql" %}PostgreSQL{% endif %}'
+        {% if database_password | default("") | length > 0 %}
         --db-host '{{ database_ip }}'
+        {% endif %}
         --db-port '{{ database_port }}'
         --db-user '{{ agent_db_user }}'
         --db-pass '{{ agent_db_password }}'
+        {% if database_password | default("") | length > 0 %}        
         --db-admin-user '{{ database_user }}'
         --db-admin-pass '{{ database_password }}'
+        {% endif %}
         --patroni-host '{{ database_patroni_host | d(database_ip) }}'
         --patroni-cluster-hosts '{{ patroni_cluster_hosts }}'
         --patroni-port '{{ database_patroni_port }}'
@@ -720,12 +724,16 @@
         --name '{{ database_ip }}'
         --environment '{{ agent_environment }}'
         --type '{% if database_vendor == "tantor" %}TantorDB{% elif database_vendor == "postgresql" %}PostgreSQL{% endif %}'
+        {% if database_password | default("") | length > 0 %}
         --db-host '{{ database_ip }}'
+        {% endif %}
         --db-port '{{ database_port }}'
         --db-user '{{ agent_db_user }}'
         --db-pass '{{ agent_db_password }}'
+        {% if database_password | default("") | length > 0 %}        
         --db-admin-user '{{ database_user }}'
         --db-admin-pass '{{ database_password }}'
+        {% endif %}
         --patroni-host '{{ database_patroni_host | d(database_ip) }}'
         --patroni-port '{{ database_patroni_port }}'
         {% if validate_certs_value | d(false) | bool %}
