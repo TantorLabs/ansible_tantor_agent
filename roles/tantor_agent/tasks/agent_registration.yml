@@ -693,7 +693,7 @@
         --db-port '{{ database_port }}'
         --db-user '{{ agent_db_user }}'
         --db-pass '{{ agent_db_password }}'
-        {% if database_password | default("") | length > 0 %}        
+        {% if database_password | default("") | length > 0 %}
         --db-admin-user '{{ database_user }}'
         --db-admin-pass '{{ database_password }}'
         {% endif %}
@@ -730,7 +730,7 @@
         --db-port '{{ database_port }}'
         --db-user '{{ agent_db_user }}'
         --db-pass '{{ agent_db_password }}'
-        {% if database_password | default("") | length > 0 %}        
+        {% if database_password | default("") | length > 0 %}
         --db-admin-user '{{ database_user }}'
         --db-admin-pass '{{ database_password }}'
         {% endif %}
@@ -764,6 +764,10 @@
         --db-port '{{ database_port }}'
         --db-user '{{ agent_db_user }}'
         --db-pass '{{ agent_db_password }}'
+        {% if database_password | default("") | length > 0 %}
+        --db-admin-user '{{ database_user }}'
+        --db-admin-pass '{{ database_password }}'
+        {% endif %}
         --confirm
       register: install_result
       notify: Restart pmaagent
@@ -787,6 +791,10 @@
         --db-port '{{ database_port }}'
         --db-user '{{ agent_db_user }}'
         --db-pass '{{ agent_db_password }}'
+        {% if database_password | default("") | length > 0 %}
+        --db-admin-user '{{ database_user }}'
+        --db-admin-pass '{{ database_password }}'
+        {% endif %}
         --confirm
       register: install_result
       notify: Restart pmaagent
