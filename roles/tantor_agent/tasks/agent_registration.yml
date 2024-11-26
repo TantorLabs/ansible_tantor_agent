@@ -237,7 +237,6 @@
   when:
     - database_settings_change is true
     - database_managed_patroni is false
-    - "platform_version is version('5.0.0', '<', version_type='semver')"
   block:
     - name: Find path of pg_hba.conf
       ansible.builtin.shell: >

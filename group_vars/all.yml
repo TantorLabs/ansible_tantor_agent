@@ -12,10 +12,6 @@ platform_url: ""
 # Use true in case if platform certificate works fine, otherwise (e.g. in case of self-managed certs) use false
 platform_validate_certs: false
 
-# Platform token for the registering agent
-# Generate Install token in Platform and pase it here
-platform_token: ""
-
 # Connection address to the Nats server
 # In case if there's proxy before NATS - use proxy's address
 # Do not forget to add port
@@ -59,9 +55,6 @@ agent_version: "{{ platform_version }}"
 # Agent environment
 agent_environment: "SERVER"
 
-# Agent DB type. Support values are: TantorDB, PostgreSQL
-# agent_db_type: "PostgreSQL"
-
 # User that will be created for agent purposes
 agent_db_user: ""
 
@@ -84,14 +77,13 @@ database_settings_change: false
 # Change the lines accordingly to the following structure if pg_hba.conf file should be changed.
 # database_pg_hba_settings:
 # #TYPE  DATABASE        USER            ADDRESS                 METHOD'
-# - local   all  {{ agent_db_user }}  {{ database_auth_method }}
-# - all  all   {{ agent_db_user }} {{ ansible_default_ipv4.address }}/32 {{ database_auth_method }}
+# - host    all             {{ agent_db_user | d('pma_user', true) }}             0.0.0.0/0               {{ database_auth_method | d('scram-sha-256', true) }}
 # etc
 # Make sure that you've granted the password auth (md5 or scram-sha-256) to the user, mentioned in agent_db_user variable through all hosts in the DB cluster
 database_pg_hba_settings:
-    - host    all             {{ agent_db_user | d('pma_user', true) }}             0.0.0.0/0               {{ database_auth_method | d('scram-sha-256', true) }}
+    - host    all             {{ database_psql_user | d('postgres', true) }}        0.0.0.0/0               {{ database_auth_method | d('scram-sha-256', true) }}
 
-# If listen address needs to be changed - specify all interfaces, that DBMS should listen to, separated with comma
+# If listen address needs to be changed - specify all interfaces, that DBMS should listen to
 database_listen_address_settings: "*"
 
 ############################
@@ -114,11 +106,11 @@ database_ip: "{{ ansible_default_ipv4.address }}"
 database_port: "5432"
 
 # User that connects to DBMS
-# If your pg_hba.conf does not allow local trust connection for user postgres - specify the needed username here
+# Specify the needed username here
 database_user: "postgres"
 
 # Password for the user that connects to DBMS
-# # If your pg_hba.conf does not allow local trust connection for user postgres - specify the needed password for the user "database_user" here
+# Specify the needed password for the user "database_user" here
 database_password: ""
 
 # Name of the database through which DBMS statistics and metrics are collected
@@ -134,9 +126,6 @@ database_patroni_ssl: false
 database_patroni_api_cert: ""
 database_patroni_api_key: ""
 database_patroni_api_ca: ""
-
-# Specify host that is managed by patroni
-# database_patroni_host: ''
 
 # Specify port for the connection to Patroni API
 database_patroni_port: "8008"

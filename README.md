@@ -51,8 +51,6 @@ The playbook runs under a useraccount that has passwordless access to all nodes 
 
 ## Preparation steps
 
-Make sure that there is a Workspace in Tantor Platform to which agents will be added (playbook variable ``tantor_platform_workspace_name`` of ``group_vars`` ) and a token of Install type (playbook variable ``platform_workspace_name`` of group_vars ). In case of absence of the required Workspace or token - create new ones.
-
 In the process of prepping the playbook for launch, all files to be looked at can be identified, using the symbols ``# ! #``. To do this, while in the directory of the downloaded project, execute:
 
 ```bash
