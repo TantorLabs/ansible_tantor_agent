@@ -562,7 +562,9 @@
         --name '{{ database_ip }}'
         --environment '{{ agent_environment }}'
         --type '{% if database_vendor == "tantor" %}TantorDB{% elif database_vendor == "postgresql" %}PostgreSQL{% endif %}'
+        {% if database_password | default("") | length > 0 %}
         --db-host '{{ database_ip }}'
+        {% endif %}
         --db-port '{{ database_port }}'
         --db-user '{{ agent_db_user }}'
         --db-pass '{{ agent_db_password }}'
@@ -592,7 +594,9 @@
         --name '{{ database_ip }}'
         --environment '{{ agent_environment }}'
         --type '{% if database_vendor == "tantor" %}TantorDB{% elif database_vendor == "postgresql" %}PostgreSQL{% endif %}'
+        {% if database_password | default("") | length > 0 %}
         --db-host '{{ database_ip }}'
+        {% endif %}
         --db-port '{{ database_port }}'
         --db-user '{{ agent_db_user }}'
         --db-pass '{{ agent_db_password }}'
@@ -622,7 +626,9 @@
         --name '{{ database_ip }}'
         --environment '{{ agent_environment }}'
         --type '{% if database_vendor == "tantor" %}TantorDB{% elif database_vendor == "postgresql" %}PostgreSQL{% endif %}'
+        {% if database_password | default("") | length > 0 %}
         --db-host '{{ database_ip }}'
+        {% endif %}
         --db-port '{{ database_port }}'
         --db-user '{{ agent_db_user }}'
         --db-pass '{{ agent_db_password }}'
@@ -645,7 +651,9 @@
         --name '{{ database_ip }}'
         --environment '{{ agent_environment }}'
         --type '{% if database_vendor == "tantor" %}TantorDB{% elif database_vendor == "postgresql" %}PostgreSQL{% endif %}'
+        {% if database_password | default("") | length > 0 %}
         --db-host '{{ database_ip }}'
+        {% endif %}
         --db-port '{{ database_port }}'
         --db-user '{{ agent_db_user }}'
         --db-pass '{{ agent_db_password }}'
@@ -759,7 +767,9 @@
         --name '{{ database_ip }}'
         --environment '{{ agent_environment }}'
         --type '{% if database_vendor == "tantor" %}TantorDB{% elif database_vendor == "postgresql" %}PostgreSQL{% endif %}'
+        {% if database_password | default("") | length > 0 %}
         --db-host '{{ database_ip }}'
+        {% endif %}
         --db-port '{{ database_port }}'
         --db-user '{{ agent_db_user }}'
         --db-pass '{{ agent_db_password }}'
@@ -786,7 +796,9 @@
         --name '{{ database_ip }}'
         --environment '{{ agent_environment }}'
         --type '{% if database_vendor == "tantor" %}TantorDB{% elif database_vendor == "postgresql" %}PostgreSQL{% endif %}'
+        {% if database_password | default("") | length > 0 %}
         --db-host '{{ database_ip }}'
+        {% endif %}
         --db-port '{{ database_port }}'
         --db-user '{{ agent_db_user }}'
         --db-pass '{{ agent_db_password }}'
