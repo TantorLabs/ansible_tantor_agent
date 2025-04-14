@@ -56,6 +56,10 @@
         tenant_token: "{{ tenant_token_response.json.accessToken }}"
 
     # Создаём установочный токен доступа
+    - name: Get system time
+      ansible.builtin.shell: "date +%Y-%m-%dT%H:%M:%SZ -d \"+1 hour\""
+      register: my_system_time
+
     - name: Create installation token
       ansible.builtin.uri:
         url: "{{ platform_url }}/api/integrations/tokens"
@@ -66,8 +70,8 @@
         method: "POST"
         body_format: json
         body:
-          name: "Ansible token"
-          expiresAt: "{{ (ansible_date_time.iso8601 | regex_replace('T.*', '')) }}T20:59:59Z"
+          name: "Ansible token {{ my_system_time.stdout }}"
+          expiresAt: "{{ my_system_time.stdout }}"
           scope: "INSTALL"
         return_content: true
         status_code: [200]
