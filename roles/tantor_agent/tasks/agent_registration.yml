@@ -1,5 +1,4 @@
 ---
-
 - name: Block for operation with the platform that should be performed once
   run_once: true
   become: false
@@ -25,7 +24,6 @@
       ansible.builtin.set_fact:
         access_token: "{{ login_response.json.accessToken }}"
 
-    # Получаем список тенантов
     - name: Get list of tenants
       ansible.builtin.uri:
         url: "{{ platform_url }}/api/tenants?page=1&limit=50"
@@ -39,10 +37,91 @@
       register: tenants_response
       delegate_to: localhost
 
-    # Переключаемся на нужный тенант и получаем новый токен
+    - name: Extract tenant names
+      ansible.builtin.set_fact:
+        available_tenant_names: "{{ tenants_response.json.results | map(attribute='name') | list }}"
+
+    - name: Get list of operational databases
+      when: 
+        - platform_version is version("6.0.0", ">=")
+        - platform_tenant_name not in available_tenant_names
+      ansible.builtin.uri:
+        url: "{{ platform_url }}/api/maindb/databases"
+        headers:
+          Authorization: "Bearer {{ access_token }}"
+          accept: "application/json"
+        validate_certs: "{{ platform_validate_certs }}"
+        method: "GET"
+        return_content: true
+        status_code: [200]
+      register: operdbs_response
+      delegate_to: localhost
+
+    - name: Create tenant if not exists
+      when: 
+        - platform_tenant_name not in available_tenant_names
+        - platform_version is version("6.0.0", ">=")
+      ansible.builtin.uri:
+        url: "{{ platform_url }}/api/tenants"
+        headers:
+          Authorization: "Bearer {{ access_token }}"
+          accept: "application/json, text/plain, */*"
+          Content-Type: "application/json"
+        validate_certs: "{{ platform_validate_certs }}"
+        method: "POST"
+        body_format: json
+        body:
+          name: "{{ platform_tenant_name }}"
+          DBID: 1
+          description: "{{ platform_tenant_description | default('Auto-generated tenant') }}"
+        return_content: true
+        status_code: [200, 201]
+      register: create_tenant_response
+      delegate_to: localhost
+
+    - name: Get updated list of tenants after creation
+      ansible.builtin.uri:
+        url: "{{ platform_url }}/api/tenants?page=1&limit=50"
+        headers:
+          Authorization: "Bearer {{ access_token }}"
+          accept: "application/json"
+        validate_certs: "{{ platform_validate_certs }}"
+        method: "GET"
+        return_content: true
+        status_code: [200]
+      register: tenants_response_updated
+      delegate_to: localhost
+      when: platform_tenant_name not in available_tenant_names
+
+    - name: Set current tenant list
+      ansible.builtin.set_fact:
+        current_tenant_list: >-
+          {%- if tenants_response_updated is defined and tenants_response_updated.json is defined -%}
+            {{ tenants_response_updated.json.results }}
+          {%- else -%}
+            {{ tenants_response.json.results }}
+          {%- endif -%}
+
+    - name: Set tenant_key fact for specific tenant
+      when:
+        - item.name == platform_tenant_name
+        - platform_version is version("6.0.0", ">=")
+      ansible.builtin.set_fact:
+        tenant_key: "{{ item.tenantKey }}"
+      loop: "{{ current_tenant_list }}"
+
+    - name: Set tenant switch URL based on platform version
+      ansible.builtin.set_fact:
+        tenant_switch_url: >-
+          {% if platform_version is version("6.0.0", ">=") -%}
+          {{ platform_url }}/api/current_user/session/tenant/{{ tenant_key }}
+          {%- else -%}
+          {{ platform_url }}/api/current_user/session/tenant/{{ platform_tenant_id }}
+          {%- endif %}
+
     - name: Switch to tenant and get tenant token
       ansible.builtin.uri:
-        url: "{{ platform_url }}/api/current_user/session/tenant/{{ platform_tenant_id }}"
+        url: "{{ tenant_switch_url }}"
         headers:
           Authorization: "Bearer {{ access_token }}"
           accept: "application/json"
@@ -57,8 +136,8 @@
       ansible.builtin.set_fact:
         tenant_token: "{{ tenant_token_response.json.accessToken }}"
 
-    # Создаём установочный токен доступа
     - name: Get system time
+      changed_when: false
       ansible.builtin.shell: "date +%Y-%m-%dT%H:%M:%SZ -d \"+1 hour\""
       register: my_system_time
 
@@ -846,7 +925,7 @@
         validate_certs: "{{ platform_validate_certs }}"
         method: "DELETE"
         status_code: [200, 204]
-      loop: "{{ tokens_list_response.json.results | selectattr('name', 'equalto', 'Ansible token') | list }}"
+      loop: "{{ tokens_list_response.json.results | selectattr('name', 'search', 'Ansible token') | list }}"
       loop_control:
         label: "{{ item.apiKeyID }}"
       delegate_to: localhost
