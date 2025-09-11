@@ -899,6 +899,14 @@
       changed_when:
         - "install_result.stdout is regex ('Instance .* has been added successfully')"
 
+- name: Fix permissions for agent
+  ansible.builtin.file:
+    path: /var/lib/pma/agent
+    state: directory
+    recurse: yes
+    owner: postgres
+    group: postgres
+
 - name: Cleanup process
   become: false
   run_once: true
