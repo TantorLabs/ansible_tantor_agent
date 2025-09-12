@@ -17,10 +17,16 @@ platform_validate_certs: false
 # Do not forget to add port
 platform_nats_endpoint: ""
 
-# Specify platform tennant ID that will be used
+# Specify platform tennant ID that will be used (for version less then 6.0.0)
 platform_tenant_id: "1"
 
-# Workspace in Platform that agents will be attached to
+# Specify platform tennant name that will be used (for version equal or higher then 6.0.0). 
+platform_tenant_name: ""
+
+# Specify tenant description (it will be added if tenant will be created)
+platform_tenant_description: ""
+
+# Workspace in Platform that agents will be attached to. In case if workspace does not exists - it will be created in needed tenant
 platform_workspace_name: ""
 
 # If platform is installed not in Docker-way use port that proxies to packages directory in reverse_proxy node

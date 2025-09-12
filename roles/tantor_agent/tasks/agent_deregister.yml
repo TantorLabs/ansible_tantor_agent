@@ -23,7 +23,6 @@
       ansible.builtin.set_fact:
         access_token: "{{ login_response.json.accessToken }}"
 
-    # Получаем список тенантов
     - name: Get list of tenants
       ansible.builtin.uri:
         url: "{{ platform_url }}/api/tenants?page=1&limit=50"
@@ -37,10 +36,41 @@
       register: tenants_response
       delegate_to: localhost
 
-    # Переключаемся на нужный тенант и получаем новый токен
+    - name: Extract tenant names
+      when:
+        - platform_version is version("6.0.0", ">=")
+      ansible.builtin.set_fact:
+        available_tenant_names: "{{ tenants_response.json.results | map(attribute='name') | list }}"
+
+    - name: Fail if tenant not found
+      when:
+        - platform_version is version("6.0.0", ">=")
+        - platform_tenant_name is defined
+        - available_tenant_names is defined
+        - platform_tenant_name not in available_tenant_names
+      ansible.builtin.fail:
+        msg: "Tenant '{{ platform_tenant_name | default('undefined') }}' not found. Available tenants: {{ available_tenant_names | default([]) | join(', ') }}"
+
+    - name: Set tenant_key fact for specific tenant
+      when:
+        - item.name == "{{ platform_tenant_name }}"
+        - platform_version is version("6.0.0", ">=")
+      ansible.builtin.set_fact:
+        tenant_key: "{{ item.tenantKey }}"
+      loop: "{{ tenants_response.json.results }}"
+
+    - name: Set tenant switch URL based on platform version
+      ansible.builtin.set_fact:
+        tenant_switch_url: >-
+          {% if platform_version is version("6.0.0", ">=") -%}
+          {{ platform_url }}/api/current_user/session/tenant/{{ tenant_key }}
+          {%- else -%}
+          {{ platform_url }}/api/current_user/session/tenant/{{ platform_tenant_id }}
+          {%- endif %}
+
     - name: Switch to tenant and get tenant token
       ansible.builtin.uri:
-        url: "{{ platform_url }}/api/current_user/session/tenant/{{ platform_tenant_id }}"
+        url: "{{ tenant_switch_url }}"
         headers:
           Authorization: "Bearer {{ access_token }}"
           accept: "application/json"
@@ -55,8 +85,8 @@
       ansible.builtin.set_fact:
         tenant_token: "{{ tenant_token_response.json.accessToken }}"
 
-    # Создаём установочный токен доступа
     - name: Get system time
+      changed_when: false
       ansible.builtin.shell: "date +%Y-%m-%dT%H:%M:%SZ -d \"+1 hour\""
       register: my_system_time
 
