@@ -16,40 +16,42 @@
           accept: "application/json, text/plain, */*"
           content-type: "application/json"
         status_code: [200]
-      register: login_response
+      register: tantor_agent_login_response
       delegate_to: localhost
 
     - name: Set access token fact
       ansible.builtin.set_fact:
-        access_token: "{{ login_response.json.accessToken }}"
+        tantor_agent_access_token: "{{ tantor_agent_login_response.json.accessToken }}"
 
     - name: Get list of tenants
       ansible.builtin.uri:
         url: "{{ platform_url }}/api/tenants?page=1&limit=50"
         headers:
-          Authorization: "Bearer {{ access_token }}"
+          Authorization: "Bearer {{ tantor_agent_access_token }}"
           accept: "application/json"
         validate_certs: "{{ platform_validate_certs }}"
         method: "GET"
         return_content: true
         status_code: [200]
-      register: tenants_response
+      register: tantor_agent_tenants_response
       delegate_to: localhost
 
     - name: Extract tenant names
       when:
         - platform_version is version("6.0.0", ">=")
       ansible.builtin.set_fact:
-        available_tenant_names: "{{ tenants_response.json.results | map(attribute='name') | list }}"
+        tantor_agent_available_tenant_names: "{{ tantor_agent_tenants_response.json.results | map(attribute='name') | list }}"
 
     - name: Fail if tenant not found
       when:
         - platform_version is version("6.0.0", ">=")
         - platform_tenant_name is defined
-        - available_tenant_names is defined
-        - platform_tenant_name not in available_tenant_names
+        - tantor_agent_available_tenant_names is defined
+        - platform_tenant_name not in tantor_agent_available_tenant_names
       ansible.builtin.fail:
-        msg: "Tenant '{{ platform_tenant_name | default('undefined') }}' not found. Available tenants: {{ available_tenant_names | default([]) | join(', ') }}"
+        msg: |
+          "Tenant '{{ platform_tenant_name | default('undefined') }}' not found.
+          Available tenants: {{ tantor_agent_available_tenant_names | default([]) | join(', ') }}"
 
     - name: Set tenant_key fact for specific tenant
       when:
@@ -57,10 +59,10 @@
         - platform_version is version("6.0.0", ">=")
       ansible.builtin.set_fact:
         tenant_key: "{{ item.tenantKey }}"
-      loop: "{{ tenants_response.json.results }}"
+      loop: "{{ tantor_agent_tenants_response.json.results }}"
 
     - name: Set tenant switch URL based on platform version
-      ansible.builtin.set_fact:
+      ansible.builtin.set_fact: # noqa jinja[spacing]
         tenant_switch_url: >-
           {% if platform_version is version("6.0.0", ">=") -%}
           {{ platform_url }}/api/current_user/session/tenant/{{ tenant_key }}
@@ -72,7 +74,7 @@
       ansible.builtin.uri:
         url: "{{ tenant_switch_url }}"
         headers:
-          Authorization: "Bearer {{ access_token }}"
+          Authorization: "Bearer {{ tantor_agent_access_token }}"
           accept: "application/json"
         validate_certs: "{{ platform_validate_certs }}"
         method: "POST"

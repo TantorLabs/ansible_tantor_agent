@@ -17,18 +17,18 @@
           accept: "application/json, text/plain, */*"
           content-type: "application/json"
         status_code: [200]
-      register: login_response
+      register: tantor_agent_login_response
       delegate_to: localhost
 
     - name: Set access token fact (JWT)
       ansible.builtin.set_fact:
-        access_token: "{{ login_response.json.accessToken }}"
+        tantor_agent_access_token: "{{ tantor_agent_login_response.json.accessToken }}"
 
     - name: Get list of tenants
       ansible.builtin.uri:
         url: "{{ platform_url }}/api/tenants?page=1&limit=50"
         headers:
-          Authorization: "Bearer {{ access_token }}"
+          Authorization: "Bearer {{ tantor_agent_access_token }}"
           accept: "application/json"
         validate_certs: "{{ platform_validate_certs }}"
         method: "GET"
@@ -39,16 +39,16 @@
 
     - name: Extract tenant names
       ansible.builtin.set_fact:
-        available_tenant_names: "{{ tenants_response.json.results | map(attribute='name') | list }}"
+        tantor_agent_available_tenant_names: "{{ tenants_response.json.results | map(attribute='name') | list }}"
 
     - name: Get list of operational databases
-      when: 
+      when:
         - platform_version is version("6.0.0", ">=")
-        - platform_tenant_name not in available_tenant_names
+        - platform_tenant_name not in tantor_agent_available_tenant_names
       ansible.builtin.uri:
         url: "{{ platform_url }}/api/maindb/databases"
         headers:
-          Authorization: "Bearer {{ access_token }}"
+          Authorization: "Bearer {{ tantor_agent_access_token }}"
           accept: "application/json"
         validate_certs: "{{ platform_validate_certs }}"
         method: "GET"
@@ -58,13 +58,13 @@
       delegate_to: localhost
 
     - name: Create tenant if not exists
-      when: 
-        - platform_tenant_name not in available_tenant_names
+      when:
+        - platform_tenant_name not in tantor_agent_available_tenant_names
         - platform_version is version("6.0.0", ">=")
       ansible.builtin.uri:
         url: "{{ platform_url }}/api/tenants"
         headers:
-          Authorization: "Bearer {{ access_token }}"
+          Authorization: "Bearer {{ tantor_agent_access_token }}"
           accept: "application/json, text/plain, */*"
           Content-Type: "application/json"
         validate_certs: "{{ platform_validate_certs }}"
@@ -83,7 +83,7 @@
       ansible.builtin.uri:
         url: "{{ platform_url }}/api/tenants?page=1&limit=50"
         headers:
-          Authorization: "Bearer {{ access_token }}"
+          Authorization: "Bearer {{ tantor_agent_access_token }}"
           accept: "application/json"
         validate_certs: "{{ platform_validate_certs }}"
         method: "GET"
@@ -91,7 +91,7 @@
         status_code: [200]
       register: tenants_response_updated
       delegate_to: localhost
-      when: platform_tenant_name not in available_tenant_names
+      when: platform_tenant_name not in tantor_agent_available_tenant_names
 
     - name: Set current tenant list
       ansible.builtin.set_fact:
@@ -111,7 +111,7 @@
       loop: "{{ current_tenant_list }}"
 
     - name: Set tenant switch URL based on platform version
-      ansible.builtin.set_fact:
+      ansible.builtin.set_fact: # noqa jinja[spacing]
         tenant_switch_url: >-
           {% if platform_version is version("6.0.0", ">=") -%}
           {{ platform_url }}/api/current_user/session/tenant/{{ tenant_key }}
@@ -123,7 +123,7 @@
       ansible.builtin.uri:
         url: "{{ tenant_switch_url }}"
         headers:
-          Authorization: "Bearer {{ access_token }}"
+          Authorization: "Bearer {{ tantor_agent_access_token }}"
           accept: "application/json"
         validate_certs: "{{ platform_validate_certs }}"
         method: "POST"
@@ -551,11 +551,11 @@
         --type '{% if database_vendor == "tantor" %}TantorDB{% elif database_vendor == "postgresql" %}PostgreSQL{% endif %}'
         --workspace-name '{{ platform_workspace_name }}'
         --nats-endpoint '{{ platform_nats_endpoint }}'
-      register: install_result
+      register: tantor_agent_install_result
       notify: Restart pmaagent
-      failed_when: install_result.stderr != ""
+      failed_when: tantor_agent_install_result.stderr != ""
       changed_when:
-        - "install_result.stdout is regex ('Agent successfully registered')"
+        - "tantor_agent_install_result.stdout is regex ('Agent successfully registered')"
 
     - name: Register agent managed by Patroni on replica nodes | platform_version <= 3.2.2
       when:
@@ -573,11 +573,11 @@
         --type '{% if database_vendor == "tantor" %}TantorDB{% elif database_vendor == "postgresql" %}PostgreSQL{% endif %}'
         --workspace-name '{{ platform_workspace_name }}'
         --nats-endpoint '{{ platform_nats_endpoint }}'
-      register: install_result
+      register: tantor_agent_install_result
       notify: Restart pmaagent
-      failed_when: install_result.stderr != ""
+      failed_when: tantor_agent_install_result.stderr != ""
       changed_when:
-        - "install_result.stdout is regex ('Agent successfully registered')"
+        - "tantor_agent_install_result.stdout is regex ('Agent successfully registered')"
 
     - name: Register agent without Patroni on master node | platform_version <= 3.2.2
       when:
@@ -592,11 +592,11 @@
         --type '{% if database_vendor == "tantor" %}TantorDB{% elif database_vendor == "postgresql" %}PostgreSQL{% endif %}'
         --workspace-name '{{ platform_workspace_name }}'
         --nats-endpoint '{{ platform_nats_endpoint }}'
-      register: install_result
+      register: tantor_agent_install_result
       notify: Restart pmaagent
-      failed_when: install_result.stderr != ""
+      failed_when: tantor_agent_install_result.stderr != ""
       changed_when:
-        - "install_result.stdout is regex ('Agent successfully registered')"
+        - "tantor_agent_install_result.stdout is regex ('Agent successfully registered')"
 
     - name: Register agent without Patroni on replica nodes | platform_version <= 3.2.2
       when:
@@ -611,11 +611,11 @@
         --type '{% if database_vendor == "tantor" %}TantorDB{% elif database_vendor == "postgresql" %}PostgreSQL{% endif %}'
         --workspace-name '{{ platform_workspace_name }}'
         --nats-endpoint '{{ platform_nats_endpoint }}'
-      register: install_result
+      register: tantor_agent_install_result
       notify: Restart pmaagent
-      failed_when: install_result.stderr != ""
+      failed_when: tantor_agent_install_result.stderr != ""
       changed_when:
-        - "install_result.stdout is regex ('Agent successfully registered')"
+        - "tantor_agent_install_result.stdout is regex ('Agent successfully registered')"
 
 - name: Block for platform more or equal to 3.3.0 but less then 5.0.0
   when:
@@ -630,11 +630,11 @@
         --host '{{ database_ip }}'
         --workspace-name '{{ platform_workspace_name }}'
         --endpoint '{{ platform_nats_endpoint }}'
-      register: install_result
+      register: tantor_agent_install_result
       notify: Restart pmaagent
-      failed_when: install_result.stderr != ""
+      failed_when: tantor_agent_install_result.stderr != ""
       changed_when:
-        - "install_result.stdout is regex ('Agent successfully registered')"
+        - "tantor_agent_install_result.stdout is regex ('Agent successfully registered')"
 
     - name: Instance add with Patroni on master node | platform >= 3.3.0 < 5.0.0
       when:
@@ -659,14 +659,14 @@
         --patroni-user '{{ database_patroni_user }}'
         --patroni-password '{{ database_patroni_password }}'
         --confirm
-      register: install_result
+      register: tantor_agent_install_result
       notify: Restart pmaagent
       failed_when:
-        - install_result.rc != 0
-        - "install_result.stderr is not regex('Instance with the provided host .* and port .* exists')"
-        - "install_result.stderr is not regex('Instance with the provided port .* exists')"
+        - tantor_agent_install_result.rc != 0
+        - "tantor_agent_install_result.stderr is not regex('Instance with the provided host .* and port .* exists')"
+        - "tantor_agent_install_result.stderr is not regex('Instance with the provided port .* exists')"
       changed_when:
-        - "install_result.stdout is regex ('Instance .* has been added successfully')"
+        - "tantor_agent_install_result.stdout is regex ('Instance .* has been added successfully')"
 
     - name: Instance add with Patroni on replica nodes | platform >= 3.3.0 < 5.0.0
       when:
@@ -691,14 +691,14 @@
         --patroni-user '{{ database_patroni_user }}'
         --patroni-password '{{ database_patroni_password }}'
         --confirm
-      register: install_result
+      register: tantor_agent_install_result
       notify: Restart pmaagent
       failed_when:
-        - install_result.rc != 0
-        - "install_result.stderr is not regex('Instance with the provided host .* and port .* exists')"
-        - "install_result.stderr is not regex('Instance with the provided port .* exists')"
+        - tantor_agent_install_result.rc != 0
+        - "tantor_agent_install_result.stderr is not regex('Instance with the provided host .* and port .* exists')"
+        - "tantor_agent_install_result.stderr is not regex('Instance with the provided port .* exists')"
       changed_when:
-        - "install_result.stdout is regex ('Instance .* has been added successfully')"
+        - "tantor_agent_install_result.stdout is regex ('Instance .* has been added successfully')"
 
     - name: Instance add without Patroni on master node | platform >= 3.3.0 < 5.0.0
       when:
@@ -716,14 +716,14 @@
         --db-user '{{ agent_db_user }}'
         --db-pass '{{ agent_db_password }}'
         --confirm
-      register: install_result
+      register: tantor_agent_install_result
       notify: Restart pmaagent
       failed_when:
-        - install_result.rc != 0
-        - "install_result.stderr is not regex('Instance with the provided host .* and port .* exists')"
-        - "install_result.stderr is not regex('Instance with the provided port .* exists')"
+        - tantor_agent_install_result.rc != 0
+        - "tantor_agent_install_result.stderr is not regex('Instance with the provided host .* and port .* exists')"
+        - "tantor_agent_install_result.stderr is not regex('Instance with the provided port .* exists')"
       changed_when:
-        - "install_result.stdout is regex ('Instance .* has been added successfully')"
+        - "tantor_agent_install_result.stdout is regex ('Instance .* has been added successfully')"
 
     - name: Instance add without Patroni on replica nodes | platform >= 3.3.0 < 5.0.0
       when:
@@ -741,14 +741,14 @@
         --db-user '{{ agent_db_user }}'
         --db-pass '{{ agent_db_password }}'
         --confirm
-      register: install_result
+      register: tantor_agent_install_result
       notify: Restart pmaagent
       failed_when:
-        - install_result.rc != 0
-        - "install_result.stderr is not regex('Instance with the provided host .* and port .* exists')"
-        - "install_result.stderr is not regex('Instance with the provided port .* exists')"
+        - tantor_agent_install_result.rc != 0
+        - "tantor_agent_install_result.stderr is not regex('Instance with the provided host .* and port .* exists')"
+        - "tantor_agent_install_result.stderr is not regex('Instance with the provided port .* exists')"
       changed_when:
-        - "install_result.stdout is regex ('Instance .* has been added successfully')"
+        - "tantor_agent_install_result.stdout is regex ('Instance .* has been added successfully')"
 
 - name: Block for platform version more then 5.0.0
   when:
@@ -762,11 +762,11 @@
         --host '{{ database_ip }}'
         --workspace-name '{{ platform_workspace_name }}'
         --endpoint '{{ platform_nats_endpoint }}'
-      register: install_result
+      register: tantor_agent_install_result
       notify: Restart pmaagent
-      failed_when: install_result.stderr != ""
+      failed_when: tantor_agent_install_result.stderr != ""
       changed_when:
-        - "install_result.stdout is regex ('Agent successfully registered')"
+        - "tantor_agent_install_result.stdout is regex ('Agent successfully registered')"
 
     - name: Instance add with Patroni on master node | platform >= 5.0.0
       when:
@@ -796,14 +796,14 @@
         --patroni-user '{{ database_patroni_user }}'
         --patroni-password '{{ database_patroni_password }}'
         --confirm
-      register: install_result
+      register: tantor_agent_install_result
       notify: Restart pmaagent
       failed_when:
-        - install_result.rc != 0
-        - "install_result.stderr is not regex('Instance with the provided host .* and port .* exists')"
-        - "install_result.stderr is not regex('Instance with the provided port .* exists')"
+        - tantor_agent_install_result.rc != 0
+        - "tantor_agent_install_result.stderr is not regex('Instance with the provided host .* and port .* exists')"
+        - "tantor_agent_install_result.stderr is not regex('Instance with the provided port .* exists')"
       changed_when:
-        - "install_result.stdout is regex ('Instance .* has been added successfully')"
+        - "tantor_agent_install_result.stdout is regex ('Instance .* has been added successfully')"
 
     - name: Instance add with Patroni on replica nodes | platform >= 5.0.0
       when:
@@ -832,14 +832,14 @@
         --patroni-user '{{ database_patroni_user }}'
         --patroni-password '{{ database_patroni_password }}'
         --confirm
-      register: install_result
+      register: tantor_agent_install_result
       notify: Restart pmaagent
       failed_when:
-        - install_result.rc != 0
-        - "install_result.stderr is not regex('Instance with the provided host .* and port .* exists')"
-        - "install_result.stderr is not regex('Instance with the provided port .* exists')"
+        - tantor_agent_install_result.rc != 0
+        - "tantor_agent_install_result.stderr is not regex('Instance with the provided host .* and port .* exists')"
+        - "tantor_agent_install_result.stderr is not regex('Instance with the provided port .* exists')"
       changed_when:
-        - "install_result.stdout is regex ('Instance .* has been added successfully')"
+        - "tantor_agent_install_result.stdout is regex ('Instance .* has been added successfully')"
 
     - name: Instance add without Patroni on master node | platform >= 5.0.0
       when:
@@ -861,14 +861,14 @@
         --db-admin-pass '{{ database_password }}'
         {% endif %}
         --confirm
-      register: install_result
+      register: tantor_agent_install_result
       notify: Restart pmaagent
       failed_when:
-        - install_result.rc != 0
-        - "install_result.stderr is not regex('Instance with the provided host .* and port .* exists')"
-        - "install_result.stderr is not regex('Instance with the provided port .* exists')"
+        - tantor_agent_install_result.rc != 0
+        - "tantor_agent_install_result.stderr is not regex('Instance with the provided host .* and port .* exists')"
+        - "tantor_agent_install_result.stderr is not regex('Instance with the provided port .* exists')"
       changed_when:
-        - "install_result.stdout is regex ('Instance .* has been added successfully')"
+        - "tantor_agent_install_result.stdout is regex ('Instance .* has been added successfully')"
 
     - name: Instance add without Patroni on replica nodes | platform >= 5.0.0
       when:
@@ -890,20 +890,20 @@
         --db-admin-pass '{{ database_password }}'
         {% endif %}
         --confirm
-      register: install_result
+      register: tantor_agent_install_result
       notify: Restart pmaagent
       failed_when:
-        - install_result.rc != 0
-        - "install_result.stderr is not regex('Instance with the provided host .* and port .* exists')"
-        - "install_result.stderr is not regex('Instance with the provided port .* exists')"
+        - tantor_agent_install_result.rc != 0
+        - "tantor_agent_install_result.stderr is not regex('Instance with the provided host .* and port .* exists')"
+        - "tantor_agent_install_result.stderr is not regex('Instance with the provided port .* exists')"
       changed_when:
-        - "install_result.stdout is regex ('Instance .* has been added successfully')"
+        - "tantor_agent_install_result.stdout is regex ('Instance .* has been added successfully')"
 
 - name: Fix permissions for agent
   ansible.builtin.file:
     path: /var/lib/pma/agent
     state: directory
-    recurse: yes
+    recurse: true
     owner: postgres
     group: postgres
 

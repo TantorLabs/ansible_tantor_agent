@@ -21,7 +21,7 @@
     state: present
   when: ansible_os_family in ("Debian", "Astra Linux")
 
-- name: Install apt package pmaagent
+- name: Install package pmaagent
   ansible.builtin.apt:
     name: "pmaagent={{ agent_version }}"
     update_cache: true
@@ -30,8 +30,8 @@
   notify: Restart pmaagent
   when: ansible_os_family in ("Debian", "Astra Linux")
 
-- name: Install yum package pmaagent
-  ansible.builtin.yum:
+- name: Install package pmaagent
+  ansible.builtin.dnf:
     name: "pmaagent-{{ agent_version }}"
     update_cache: true
     allow_downgrade: true
