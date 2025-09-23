@@ -47,14 +47,14 @@ platform_admin_password: ""
 ## Agent installation mode
 # local      - Download and install deb/rpm agent packages version corresponding to the platform version \
 #              from the reverse proxy (nginx) component of the platform without connecting to external resources. \
-#              The 'tantor_agent_version' parameter is ignored
+#              The 'agent_version' parameter is ignored
 # repo       - Install the platform agent from the Tantor Labs public repository
 # purge      - Delete package agent from system and deregister agent from Platform
 # deregister - Deregister agent from Platform without delete package
 agent_install_mode: "repo"
 
 # The version of the agent to be installed, only applies to installing an agent from the repository
-tantor_agent_version: "{{ platform_version }}"
+agent_version: "{{ platform_version }}"
 
 ### Agent settings for registration in the Tantor Platform
 

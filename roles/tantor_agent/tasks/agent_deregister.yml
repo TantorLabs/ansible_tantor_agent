@@ -55,24 +55,24 @@
 
     - name: Set tenant_key fact for specific tenant
       when:
-        - item.name == "{{ platform_tenant_name }}"
+        - item.name == platform_tenant_name
         - platform_version is version("6.0.0", ">=")
       ansible.builtin.set_fact:
-        tenant_key: "{{ item.tenantKey }}"
+        tantor_agent_tenant_key: "{{ item.tenantKey }}"
       loop: "{{ tantor_agent_tenants_response.json.results }}"
 
     - name: Set tenant switch URL based on platform version
       ansible.builtin.set_fact: # noqa jinja[spacing]
-        tenant_switch_url: >-
+        tantor_agent_tenant_switch_url: >-
           {% if platform_version is version("6.0.0", ">=") -%}
-          {{ platform_url }}/api/current_user/session/tenant/{{ tenant_key }}
+          {{ platform_url }}/api/current_user/session/tenant/{{ tantor_agent_tenant_key }}
           {%- else -%}
           {{ platform_url }}/api/current_user/session/tenant/{{ platform_tenant_id }}
           {%- endif %}
 
     - name: Switch to tenant and get tenant token
       ansible.builtin.uri:
-        url: "{{ tenant_switch_url }}"
+        url: "{{ tantor_agent_tenant_switch_url }}"
         headers:
           Authorization: "Bearer {{ tantor_agent_access_token }}"
           accept: "application/json"
@@ -80,39 +80,39 @@
         method: "POST"
         return_content: true
         status_code: [200]
-      register: tenant_token_response
+      register: tantor_agent_tenant_token_response
       delegate_to: localhost
 
     - name: Set tenant token fact
       ansible.builtin.set_fact:
-        tenant_token: "{{ tenant_token_response.json.accessToken }}"
+        tantor_agent_tenant_token: "{{ tantor_agent_tenant_token_response.json.accessToken }}"
 
     - name: Get system time
+      ansible.builtin.command: "date +%Y-%m-%dT%H:%M:%SZ -d \"+1 hour\""
+      register: tantor_agent_my_system_time
       changed_when: false
-      ansible.builtin.shell: "date +%Y-%m-%dT%H:%M:%SZ -d \"+1 hour\""
-      register: my_system_time
 
     - name: Create installation token
       ansible.builtin.uri:
         url: "{{ platform_url }}/api/integrations/tokens"
         headers:
-          Authorization: "Bearer {{ tenant_token }}"
+          Authorization: "Bearer {{ tantor_agent_tenant_token }}"
           accept: "application/json, text/plain, */*"
         validate_certs: "{{ platform_validate_certs }}"
         method: "POST"
         body_format: json
         body:
-          name: "Ansible token {{ my_system_time.stdout }}"
-          expiresAt: "{{ my_system_time.stdout }}"
+          name: "Ansible token {{ tantor_agent_my_system_time.stdout }}"
+          expiresAt: "{{ tantor_agent_my_system_time.stdout }}"
           scope: "INSTALL"
         return_content: true
         status_code: [200]
-      register: platform_token_response
+      register: tantor_agent_platform_token_response
       delegate_to: localhost
 
     - name: Set installation platform token fact
       ansible.builtin.set_fact:
-        platform_token: "{{ platform_token_response.json.tokenString }}"
+        tantor_agent_platform_token: "{{ tantor_agent_platform_token_response.json.tokenString }}"
 
 - name: Check Agent state
   ansible.builtin.uri:
@@ -124,19 +124,19 @@
     validate_certs: "{{ platform_validate_certs }}"
     method: "POST"
     headers:
-      Authorization: "Bearer {{ platform_token }}"
+      Authorization: "Bearer {{ tantor_agent_platform_token }}"
     status_code: [422, 200]
   become: false
-  register: response
+  register: tantor_agent_response
   delegate_to: localhost
 
 - name: Deregister agent
   ansible.builtin.command: pmaagent deregister -y
-  register: deregister_result
-  failed_when: deregister_result.stderr != ""
+  register: tantor_agent_deregister_result
+  failed_when: tantor_agent_deregister_result.stderr != ""
   changed_when:
-    - "deregister_result.stdout is regex ('Agent successfully deregistered')"
-  when: response.json.code == 'WORKSPACE.AGENT.CHECK.EXISTS'
+    - "tantor_agent_deregister_result.stdout is regex ('Agent successfully deregistered')"
+  when: tantor_agent_response.json.code == 'WORKSPACE.AGENT.CHECK.EXISTS'
 
 - name: Cleanup process
   become: false
@@ -146,25 +146,25 @@
       ansible.builtin.uri:
         url: "{{ platform_url }}/api/integrations/tokens?limit=10&page=1&sort=asc:apiKeyID&name=contains(Ansible%20token)"
         headers:
-          Authorization: "Bearer {{ tenant_token }}"
+          Authorization: "Bearer {{ tantor_agent_tenant_token }}"
           accept: "application/json, text/plain, */*"
         validate_certs: "{{ platform_validate_certs }}"
         method: "GET"
         return_content: true
         status_code: [200]
-      register: tokens_list_response
+      register: tantor_agent_tokens_list_response
       delegate_to: localhost
 
     - name: Delete installation tokens
       ansible.builtin.uri:
         url: "{{ platform_url }}/api/integrations/tokens/{{ item.apiKeyID }}"
         headers:
-          Authorization: "Bearer {{ tenant_token }}"
+          Authorization: "Bearer {{ tantor_agent_tenant_token }}"
           accept: "application/json, text/plain, */*"
         validate_certs: "{{ platform_validate_certs }}"
         method: "DELETE"
         status_code: [200, 204]
-      loop: "{{ tokens_list_response.json.results | selectattr('name', 'equalto', 'Ansible token') | list }}"
+      loop: "{{ tantor_agent_tokens_list_response.json.results | selectattr('name', 'equalto', 'Ansible token') | list }}"
       loop_control:
         label: "{{ item.apiKeyID }}"
       delegate_to: localhost

@@ -11,8 +11,8 @@
   when: agent_install_mode == 'local'
 
 - name: Check version of agent
-  ansible.builtin.command: pmaagent version -r
-  register: tantor_agent_version
+  ansible.builtin.command: pmaagent version -r # noqa var-naming[no-role-prefix]
+  register: agent_version
   changed_when: false
   failed_when: false
 

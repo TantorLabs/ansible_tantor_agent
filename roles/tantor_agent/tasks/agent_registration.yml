@@ -34,12 +34,12 @@
         method: "GET"
         return_content: true
         status_code: [200]
-      register: tenants_response
+      register: tantor_agent_tenants_response
       delegate_to: localhost
 
     - name: Extract tenant names
       ansible.builtin.set_fact:
-        tantor_agent_available_tenant_names: "{{ tenants_response.json.results | map(attribute='name') | list }}"
+        tantor_agent_available_tenant_names: "{{ tantor_agent_tenants_response.json.results | map(attribute='name') | list }}"
 
     - name: Get list of operational databases
       when:
@@ -54,7 +54,7 @@
         method: "GET"
         return_content: true
         status_code: [200]
-      register: operdbs_response
+      register: tantor_agent_operdbs_response
       delegate_to: localhost
 
     - name: Create tenant if not exists
@@ -76,7 +76,7 @@
           description: "{{ platform_tenant_description | default('Auto-generated tenant') }}"
         return_content: true
         status_code: [200, 201]
-      register: create_tenant_response
+      register: tantor_agent_create_tenant_response
       delegate_to: localhost
 
     - name: Get updated list of tenants after creation
@@ -89,17 +89,17 @@
         method: "GET"
         return_content: true
         status_code: [200]
-      register: tenants_response_updated
+      register: tantor_agent_tenants_response_updated
       delegate_to: localhost
       when: platform_tenant_name not in tantor_agent_available_tenant_names
 
     - name: Set current tenant list
       ansible.builtin.set_fact:
-        current_tenant_list: >-
-          {%- if tenants_response_updated is defined and tenants_response_updated.json is defined -%}
-            {{ tenants_response_updated.json.results }}
+        tantor_agent_current_tenant_list: >-
+          {%- if tantor_agent_tenants_response_updated is defined and tantor_agent_tenants_response_updated.json is defined -%}
+            {{ tantor_agent_tenants_response_updated.json.results }}
           {%- else -%}
-            {{ tenants_response.json.results }}
+            {{ tantor_agent_tenants_response.json.results }}
           {%- endif -%}
 
     - name: Set tenant_key fact for specific tenant
@@ -107,21 +107,21 @@
         - item.name == platform_tenant_name
         - platform_version is version("6.0.0", ">=")
       ansible.builtin.set_fact:
-        tenant_key: "{{ item.tenantKey }}"
-      loop: "{{ current_tenant_list }}"
+        tantor_agent_tenant_key: "{{ item.tenantKey }}"
+      loop: "{{ tantor_agent_current_tenant_list }}"
 
     - name: Set tenant switch URL based on platform version
       ansible.builtin.set_fact: # noqa jinja[spacing]
-        tenant_switch_url: >-
+        tantor_agent_tenant_switch_url: >-
           {% if platform_version is version("6.0.0", ">=") -%}
-          {{ platform_url }}/api/current_user/session/tenant/{{ tenant_key }}
+          {{ platform_url }}/api/current_user/session/tenant/{{ tantor_agent_tenant_key }}
           {%- else -%}
           {{ platform_url }}/api/current_user/session/tenant/{{ platform_tenant_id }}
           {%- endif %}
 
     - name: Switch to tenant and get tenant token
       ansible.builtin.uri:
-        url: "{{ tenant_switch_url }}"
+        url: "{{ tantor_agent_tenant_switch_url }}"
         headers:
           Authorization: "Bearer {{ tantor_agent_access_token }}"
           accept: "application/json"
@@ -129,39 +129,39 @@
         method: "POST"
         return_content: true
         status_code: [200]
-      register: tenant_token_response
+      register: tantor_agent_tenant_token_response
       delegate_to: localhost
 
     - name: Set tenant token fact
       ansible.builtin.set_fact:
-        tenant_token: "{{ tenant_token_response.json.accessToken }}"
+        tantor_agent_tenant_token: "{{ tantor_agent_tenant_token_response.json.accessToken }}"
 
     - name: Get system time
+      ansible.builtin.command: "date +%Y-%m-%dT%H:%M:%SZ -d \"+1 hour\""
+      register: tantor_agent_my_system_time
       changed_when: false
-      ansible.builtin.shell: "date +%Y-%m-%dT%H:%M:%SZ -d \"+1 hour\""
-      register: my_system_time
 
     - name: Create installation token
       ansible.builtin.uri:
         url: "{{ platform_url }}/api/integrations/tokens"
         headers:
-          Authorization: "Bearer {{ tenant_token }}"
+          Authorization: "Bearer {{ tantor_agent_tenant_token }}"
           accept: "application/json, text/plain, */*"
         validate_certs: "{{ platform_validate_certs }}"
         method: "POST"
         body_format: json
         body:
-          name: "Ansible token {{ my_system_time.stdout }}"
-          expiresAt: "{{ my_system_time.stdout }}"
+          name: "Ansible token {{ tantor_agent_my_system_time.stdout }}"
+          expiresAt: "{{ tantor_agent_my_system_time.stdout }}"
           scope: "INSTALL"
         return_content: true
         status_code: [200]
-      register: platform_token_response
+      register: tantor_agent_platform_token_response
       delegate_to: localhost
 
     - name: Set installation platform token fact
       ansible.builtin.set_fact:
-        platform_token: "{{ platform_token_response.json.tokenString }}"
+        tantor_agent_platform_token: "{{ tantor_agent_platform_token_response.json.tokenString }}"
 
     - name: Get platform version
       when: agent_install_mode == "local"
@@ -171,22 +171,22 @@
         return_content: true
         validate_certs: "{{ platform_validate_certs }}"
         headers:
-          Authorization: "Bearer {{ tenant_token }}"
+          Authorization: "Bearer {{ tantor_agent_tenant_token }}"
         status_code: [200]
-      register: platform_version_response
+      register: tantor_agent_platform_version_response
       delegate_to: localhost
 
     - name: Register platform version
       when: agent_install_mode == "local"
-      ansible.builtin.set_fact:
-        platform_version: "{{ platform_version_response.json.version }}"
+      ansible.builtin.set_fact: # noqa var-naming[no-role-prefix]
+        platform_version: "{{ tantor_agent_platform_version_response.json.version }}"
 
     - name: Get List of existing workspaces
       ansible.builtin.uri:
         url: "{{ platform_url }}/api/workspaces"
         method: GET
         headers:
-          Authorization: "Bearer {{ tenant_token }}"
+          Authorization: "Bearer {{ tantor_agent_tenant_token }}"
           Accept: "application/json, text/plain, */*"
           Content-Type: "application/json"
         validate_certs: "{{ platform_validate_certs }}"
@@ -195,13 +195,13 @@
         status_code: [200, 201]
         return_content: true
       delegate_to: localhost
-      register: list_of_workspaces
+      register: tantor_agent_list_of_workspaces
 
     - name: Check if the workspace already exists
       ansible.builtin.set_fact:
-        workspace_exists: >-
+        tantor_agent_workspace_exists: >-
           {{
-            list_of_workspaces.json.results
+            tantor_agent_list_of_workspaces.json.results
             | selectattr('workspaceName', 'equalto', platform_workspace_name)
             | list
             | length > 0
@@ -212,7 +212,7 @@
         url: "{{ platform_url }}/api/workspaces"
         method: POST
         headers:
-          Authorization: "Bearer {{ tenant_token }}"
+          Authorization: "Bearer {{ tantor_agent_tenant_token }}"
           Accept: "application/json, text/plain, */*"
           Content-Type: "application/json"
         validate_certs: "{{ platform_validate_certs }}"
@@ -222,7 +222,7 @@
         status_code: [200, 201]
         return_content: true
       delegate_to: localhost
-      when: not workspace_exists
+      when: not tantor_agent_workspace_exists
 
 - name: Check Agent state
   ansible.builtin.uri:
@@ -234,15 +234,15 @@
     validate_certs: "{{ platform_validate_certs }}"
     method: "POST"
     headers:
-      Authorization: "Bearer {{ platform_token }}"
+      Authorization: "Bearer {{ tantor_agent_platform_token }}"
     status_code: [422, 200]
   become: false
-  register: response
+  register: tantor_agent_response
   delegate_to: localhost
 
 - name: Set patroni cluster IPs
   ansible.builtin.set_fact:
-    patroni_cluster_hosts: "{{ ansible_play_hosts_all | map('extract', hostvars, ['ansible_default_ipv4', 'address']) | join(',') }}"
+    tantor_agent_patroni_cluster_hosts: "{{ ansible_play_hosts_all | map('extract', hostvars, ['ansible_default_ipv4', 'address']) | join(',') }}"
   when: ansible_play_hosts_all | length > 0
 
 - name: Check if postgresql node is in master state
@@ -257,7 +257,7 @@
     -U {{ database_user }}
     {% endif %}
     -c "SELECT pg_is_in_recovery();" -tA
-  register: psql_node_status
+  register: tantor_agent_psql_node_status
   become: true
   become_user: "{{ database_psql_user | d('postgres', true) }}"
   become_flags: "-i"
@@ -268,7 +268,7 @@
     - "platform_version is version('5.0.0', '<', version_type='semver')"
   block:
     - name: Check if superuser role exists in system
-      when: psql_node_status.stdout == "f"
+      when: tantor_agent_psql_node_status.stdout == "f"
       ansible.builtin.shell: >
         {% if ((database_user is defined) and (database_user != "") and (database_password is defined) and (database_password != "")) %}
         PGPASSWORD={{ database_password }}
@@ -284,21 +284,21 @@
       become: true
       become_user: "{{ database_psql_user | d('postgres', true) }}"
       become_flags: "-i"
-      register: psql_userlist
+      register: tantor_agent_psql_userlist
       changed_when: false
 
     - name: Check for presence of needed superuser in roles
-      when: psql_node_status.stdout == "f"
+      when: tantor_agent_psql_node_status.stdout == "f"
       ansible.builtin.set_fact:
-        superuser_exists: >-
+        tantor_agent_superuser_exists: >-
           {{
-            (agent_db_user + '|Суперпользователь') in psql_userlist.stdout or (agent_db_user + '|Superuser') in psql_userlist.stdout
+            (agent_db_user + '|Суперпользователь') in tantor_agent_psql_userlist.stdout or (agent_db_user + '|Superuser') in tantor_agent_psql_userlist.stdout
           }}
 
     - name: Create superuser role if not exists in system
       when:
-        - psql_node_status.stdout == "f"
-        - not superuser_exists
+        - tantor_agent_psql_node_status.stdout == "f"
+        - not tantor_agent_superuser_exists
       # noqa no-changed-when
       ansible.builtin.shell: >
         {% if ((database_user is defined) and (database_user != "") and (database_password is defined) and (database_password != "")) %}
@@ -334,7 +334,7 @@
         {% endif %}
         -c "show hba_file;"
         -tA
-      register: pg_hba_file_path
+      register: tantor_agent_pg_hba_file_path
       become: true
       become_user: "{{ database_psql_user | d('postgres', true) }}"
       become_flags: "-i"
@@ -353,7 +353,7 @@
         {% endif %}
         -c "show config_file;"
         -tA
-      register: postgresql_conf_path
+      register: tantor_agent_postgresql_conf_path
       become: true
       become_user: "{{ database_psql_user | d('postgres', true) }}"
       become_flags: "-i"
@@ -361,28 +361,28 @@
 
     - name: Insert values from database_pg_hba_settings into pg_hba.conf
       ansible.builtin.blockinfile:
-        path: "{{ pg_hba_file_path.stdout }}"
+        path: "{{ tantor_agent_pg_hba_file_path.stdout }}"
         block: |
             {% for item in database_pg_hba_settings %}
             {{ item }}
             {% endfor %}
         insertafter: '# TYPE  DATABASE        USER            ADDRESS                 METHOD'
-      register: pg_hba_result
+      register: tantor_agent_pg_hba_result
 
     - name: Configure listen_addresses in postgresql.conf
       ansible.builtin.replace:
-        path: "{{ postgresql_conf_path.stdout }}"
+        path: "{{ tantor_agent_postgresql_conf_path.stdout }}"
         regexp: '.*listen_addresses\s*=\s*.*'
         replace: "listen_addresses = '{{ database_listen_address_settings }}'"
         mode: "0600"
         backup: true
-      register: listen_address_result
+      register: tantor_agent_listen_address_result
 
 - name: Restart DBMS TantorDB
   when:
     - database_vendor == "tantor"
     - database_managed_patroni is false
-    - listen_address_result.changed or pg_hba_result.changed
+    - tantor_agent_listen_address_result.changed or tantor_agent_pg_hba_result.changed
   ansible.builtin.systemd_service:
     name: tantor-{{ database_tantor_redaction }}-server-{{ database_version }}
     daemon_reload: true
@@ -399,16 +399,16 @@
       systemctl list-units --type=service --state=active |
       grep --extended-regexp 'postgresql(@|(-|)){{ database_version }}(-|@|)|postgres(-|){{ database_version }}(-|@|)' |
       awk '{print $1}'
-  register: pg_service_name
+  register: tantor_agent_pg_service_name
   changed_when: false
 
 - name: Restart DBMS PostgreSQL
   when:
     - database_vendor == "postgresql"
     - database_managed_patroni is false
-    - listen_address_result.changed or pg_hba_result.changed
+    - tantor_agent_listen_address_result.changed or tantor_agent_pg_hba_result.changed
   ansible.builtin.systemd_service:
-    name: "{{ pg_service_name.stdout.strip() }}"
+    name: "{{ tantor_agent_pg_service_name.stdout.strip() }}"
     state: restarted
 
 - name: Block for DB preparation patroni-managed DBMS
@@ -422,7 +422,7 @@
       block:
         - name: Set validate_certs based on database_patroni_ssl
           ansible.builtin.set_fact:
-            validate_certs_value: "{{ database_patroni_ssl | d(false) | bool }}"
+            tantor_agent_validate_certs_value: "{{ database_patroni_ssl | d(false) | bool }}"
 
         - name: Get current Patroni configuration using API
           ansible.builtin.uri:
@@ -437,29 +437,29 @@
             password: "{{ database_patroni_password }}"
             force_basic_auth: true
             return_content: true
-            validate_certs: "{{ validate_certs_value }}"
-            client_cert: "{{ database_patroni_api_cert if validate_certs_value else omit }}"
-            client_key: "{{ database_patroni_api_key if validate_certs_value else omit }}"
-            ca_path: "{{ database_patroni_api_ca if validate_certs_value else omit }}"
-          register: current_patroni_config
+            validate_certs: "{{ tantor_agent_validate_certs_value }}"
+            client_cert: "{{ database_patroni_api_cert if tantor_agent_validate_certs_value else omit }}"
+            client_key: "{{ database_patroni_api_key if tantor_agent_validate_certs_value else omit }}"
+            ca_path: "{{ database_patroni_api_ca if tantor_agent_validate_certs_value else omit }}"
+          register: tantor_agent_current_patroni_config
           changed_when: false
 
         - name: Set updated pg_hba configuration
           ansible.builtin.set_fact:
-            updated_pg_hba: >-
+            tantor_agent_updated_pg_hba: >-
               {{
-                current_patroni_config.json.postgresql.pg_hba +
+                tantor_agent_current_patroni_config.json.postgresql.pg_hba +
                 (
                   database_pg_hba_settings
-                  | reject('in', current_patroni_config.json.postgresql.pg_hba)
+                  | reject('in', tantor_agent_current_patroni_config.json.postgresql.pg_hba)
                   | list
                 )
               }}
 
         - name: Update Patroni configuration using API
           when:
-            - updated_pg_hba | difference(current_patroni_config.json.postgresql.pg_hba) | length > 0
-            - psql_node_status.stdout == "f"
+            - tantor_agent_updated_pg_hba | difference(tantor_agent_current_patroni_config.json.postgresql.pg_hba) | length > 0
+            - tantor_agent_psql_node_status.stdout == "f"
           ansible.builtin.uri:
             url: >-
               {% if database_patroni_ssl is true %}
@@ -477,14 +477,14 @@
             body: >
               {
                 "postgresql": {
-                  "pg_hba": {{ updated_pg_hba | to_json }}
+                  "pg_hba": {{ tantor_agent_updated_pg_hba | to_json }}
                 }
               }
             status_code: 200
-            validate_certs: "{{ validate_certs_value }}"
-            client_cert: "{{ database_patroni_api_cert if validate_certs_value else omit }}"
-            client_key: "{{ database_patroni_api_key if validate_certs_value else omit }}"
-            ca_path: "{{ database_patroni_api_ca if validate_certs_value else omit }}"
+            validate_certs: "{{ tantor_agent_validate_certs_value }}"
+            client_cert: "{{ database_patroni_api_cert if tantor_agent_validate_certs_value else omit }}"
+            client_key: "{{ database_patroni_api_key if tantor_agent_validate_certs_value else omit }}"
+            ca_path: "{{ database_patroni_api_ca if tantor_agent_validate_certs_value else omit }}"
 
         - name: Check if patroni cluster needs a restart using API
           ansible.builtin.uri:
@@ -499,16 +499,16 @@
             password: "{{ database_patroni_password }}"
             force_basic_auth: true
             return_content: true
-            validate_certs: "{{ validate_certs_value }}"
-            client_cert: "{{ database_patroni_api_cert if validate_certs_value else omit }}"
-            client_key: "{{ database_patroni_api_key if validate_certs_value else omit }}"
-            ca_path: "{{ database_patroni_api_ca if validate_certs_value else omit }}"
-          register: restart_status
+            validate_certs: "{{ tantor_agent_validate_certs_value }}"
+            client_cert: "{{ database_patroni_api_cert if tantor_agent_validate_certs_value else omit }}"
+            client_key: "{{ database_patroni_api_key if tantor_agent_validate_certs_value else omit }}"
+            ca_path: "{{ database_patroni_api_ca if tantor_agent_validate_certs_value else omit }}"
+          register: tantor_agent_restart_status
 
         - name: Restart Patroni using API
           when:
-            - restart_status.json.pending_restart | d(false)
-            - psql_node_status.stdout == "f"
+            - tantor_agent_restart_status.json.pending_restart | d(false)
+            - tantor_agent_psql_node_status.stdout == "f"
           ansible.builtin.uri:
             url: >-
               {% if database_patroni_ssl is true %}
@@ -525,23 +525,23 @@
               Content-Type: "application/json"
             body: '{"restart_pending": true}'
             status_code: 200
-            validate_certs: "{{ validate_certs_value }}"
-            client_cert: "{{ database_patroni_api_cert if validate_certs_value else omit }}"
-            client_key: "{{ database_patroni_api_key if validate_certs_value else omit }}"
-            ca_path: "{{ database_patroni_api_ca if validate_certs_value else omit }}"
+            validate_certs: "{{ tantor_agent_validate_certs_value }}"
+            client_cert: "{{ database_patroni_api_cert if tantor_agent_validate_certs_value else omit }}"
+            client_key: "{{ database_patroni_api_key if tantor_agent_validate_certs_value else omit }}"
+            ca_path: "{{ database_patroni_api_ca if tantor_agent_validate_certs_value else omit }}"
 
 - name: Block for platform less or equial to 3.2.2
   when:
-    - response.json.code != 'WORKSPACE.AGENT.CHECK.EXISTS'
+    - tantor_agent_response.json.code != 'WORKSPACE.AGENT.CHECK.EXISTS'
     - "platform_version is version('3.2.2', '<=', version_type='semver')"
   block:
     - name: Register agent managed by Patroni on master node | platform_version <= 3.2.2
       when:
         - database_managed_patroni is true
-        - psql_node_status.stdout == "f"
+        - tantor_agent_psql_node_status.stdout == "f"
       ansible.builtin.command: |
         pmaagent register
-        --access-token '{{ platform_token }}'
+        --access-token '{{ tantor_agent_platform_token }}'
         --db-user '{{ agent_db_user }}'
         --db-password '{{ agent_db_password }}'
         --host '{{ database_ip }}'
@@ -560,10 +560,10 @@
     - name: Register agent managed by Patroni on replica nodes | platform_version <= 3.2.2
       when:
         - database_managed_patroni is true
-        - psql_node_status.stdout == "t"
+        - tantor_agent_psql_node_status.stdout == "t"
       ansible.builtin.command: |
         pmaagent register
-        --access-token '{{ platform_token }}'
+        --access-token '{{ tantor_agent_platform_token }}'
         --db-user '{{ agent_db_user }}'
         --db-password '{{ agent_db_password }}'
         --host '{{ database_ip }}'
@@ -582,10 +582,10 @@
     - name: Register agent without Patroni on master node | platform_version <= 3.2.2
       when:
         - database_managed_patroni is false
-        - psql_node_status.stdout == "f"
+        - tantor_agent_psql_node_status.stdout == "f"
       ansible.builtin.command: |
         pmaagent register
-        --access-token '{{ platform_token }}'
+        --access-token '{{ tantor_agent_platform_token }}'
         --db-user '{{ agent_db_user }}'
         --db-password '{{ agent_db_password }}'
         --host '{{ database_ip }}'
@@ -601,10 +601,10 @@
     - name: Register agent without Patroni on replica nodes | platform_version <= 3.2.2
       when:
         - database_managed_patroni is false
-        - psql_node_status.stdout == "t"
+        - tantor_agent_psql_node_status.stdout == "t"
       ansible.builtin.command: |
         pmaagent register
-        --access-token '{{ platform_token }}'
+        --access-token '{{ tantor_agent_platform_token }}'
         --db-user '{{ agent_db_user }}'
         --db-password '{{ agent_db_password }}'
         --host '{{ database_ip }}'
@@ -621,12 +621,12 @@
   when:
     - "platform_version is version('3.3.0', '>=', version_type='semver')"
     - "platform_version is version('5.0.0', '<', version_type='semver')"
-    - response.json.code != 'WORKSPACE.AGENT.CHECK.EXISTS'
+    - tantor_agent_response.json.code != 'WORKSPACE.AGENT.CHECK.EXISTS'
   block:
     - name: Register agent | platform >= 3.3.0 < 5.0.0
       ansible.builtin.command: |
         pmaagent register
-        --access-token '{{ platform_token }}'
+        --access-token '{{ tantor_agent_platform_token }}'
         --host '{{ database_ip }}'
         --workspace-name '{{ platform_workspace_name }}'
         --endpoint '{{ platform_nats_endpoint }}'
@@ -639,7 +639,7 @@
     - name: Instance add with Patroni on master node | platform >= 3.3.0 < 5.0.0
       when:
         - database_managed_patroni is true
-        - psql_node_status.stdout == "f"
+        - tantor_agent_psql_node_status.stdout == "f"
       ansible.builtin.command: |
         pmaagent instances add
         --name '{{ database_ip }}'
@@ -653,7 +653,7 @@
         --db-pass '{{ agent_db_password }}'
         --patroni-host '{{ database_patroni_host | d(database_ip) }}'
         --patroni-port '{{ database_patroni_port }}'
-        {% if validate_certs_value | d(false) | bool %}
+        {% if tantor_agent_validate_certs_value | d(false) | bool %}
         --patroni-ssl
         {%endif %}
         --patroni-user '{{ database_patroni_user }}'
@@ -671,7 +671,7 @@
     - name: Instance add with Patroni on replica nodes | platform >= 3.3.0 < 5.0.0
       when:
         - database_managed_patroni is true
-        - psql_node_status.stdout == "t"
+        - tantor_agent_psql_node_status.stdout == "t"
       ansible.builtin.command: |
         pmaagent instances add
         --name '{{ database_ip }}'
@@ -685,7 +685,7 @@
         --db-pass '{{ agent_db_password }}'
         --patroni-host '{{ database_patroni_host | d(database_ip) }}'
         --patroni-port '{{ database_patroni_port }}'
-        {% if validate_certs_value | d(false) | bool %}
+        {% if tantor_agent_validate_certs_value | d(false) | bool %}
         --patroni-ssl
         {%endif %}
         --patroni-user '{{ database_patroni_user }}'
@@ -703,7 +703,7 @@
     - name: Instance add without Patroni on master node | platform >= 3.3.0 < 5.0.0
       when:
         - database_managed_patroni is false
-        - psql_node_status.stdout == "f"
+        - tantor_agent_psql_node_status.stdout == "f"
       ansible.builtin.command: |
         pmaagent instances add
         --name '{{ database_ip }}'
@@ -728,7 +728,7 @@
     - name: Instance add without Patroni on replica nodes | platform >= 3.3.0 < 5.0.0
       when:
         - database_managed_patroni is false
-        - psql_node_status.stdout == "t"
+        - tantor_agent_psql_node_status.stdout == "t"
       ansible.builtin.command: |
         pmaagent instances add
         --name '{{ database_ip }}'
@@ -753,12 +753,12 @@
 - name: Block for platform version more then 5.0.0
   when:
     - "platform_version is version('5.0.0', '>=', version_type='semver')"
-    - response.json.code != 'WORKSPACE.AGENT.CHECK.EXISTS'
+    - tantor_agent_response.json.code != 'WORKSPACE.AGENT.CHECK.EXISTS'
   block:
     - name: Register agent | platform >= 5.0.0
       ansible.builtin.command: |
         pmaagent register
-        --access-token '{{ platform_token }}'
+        --access-token '{{ tantor_agent_platform_token }}'
         --host '{{ database_ip }}'
         --workspace-name '{{ platform_workspace_name }}'
         --endpoint '{{ platform_nats_endpoint }}'
@@ -771,7 +771,7 @@
     - name: Instance add with Patroni on master node | platform >= 5.0.0
       when:
         - database_managed_patroni is true
-        - psql_node_status.stdout == "f"
+        - tantor_agent_psql_node_status.stdout == "f"
       ansible.builtin.command: |
         pmaagent instances add
         --name '{{ database_ip }}'
@@ -788,9 +788,9 @@
         --db-admin-pass '{{ database_password }}'
         {% endif %}
         --patroni-host '{{ database_patroni_host | d(database_ip) }}'
-        --patroni-cluster-hosts '{{ patroni_cluster_hosts }}'
+        --patroni-cluster-hosts '{{ tantor_agent_patroni_cluster_hosts }}'
         --patroni-port '{{ database_patroni_port }}'
-        {% if validate_certs_value | d(false) | bool %}
+        {% if tantor_agent_validate_certs_value | d(false) | bool %}
         --patroni-ssl
         {%endif %}
         --patroni-user '{{ database_patroni_user }}'
@@ -808,7 +808,7 @@
     - name: Instance add with Patroni on replica nodes | platform >= 5.0.0
       when:
         - database_managed_patroni is true
-        - psql_node_status.stdout == "t"
+        - tantor_agent_psql_node_status.stdout == "t"
       ansible.builtin.command: |
         pmaagent instances add
         --name '{{ database_ip }}'
@@ -826,7 +826,7 @@
         {% endif %}
         --patroni-host '{{ database_patroni_host | d(database_ip) }}'
         --patroni-port '{{ database_patroni_port }}'
-        {% if validate_certs_value | d(false) | bool %}
+        {% if tantor_agent_validate_certs_value | d(false) | bool %}
         --patroni-ssl
         {%endif %}
         --patroni-user '{{ database_patroni_user }}'
@@ -844,7 +844,7 @@
     - name: Instance add without Patroni on master node | platform >= 5.0.0
       when:
         - database_managed_patroni is false
-        - psql_node_status.stdout == "f"
+        - tantor_agent_psql_node_status.stdout == "f"
       ansible.builtin.command: |
         pmaagent instances add
         --name '{{ database_ip }}'
@@ -873,7 +873,7 @@
     - name: Instance add without Patroni on replica nodes | platform >= 5.0.0
       when:
         - database_managed_patroni is false
-        - psql_node_status.stdout == "t"
+        - tantor_agent_psql_node_status.stdout == "t"
       ansible.builtin.command: |
         pmaagent instances add
         --name '{{ database_ip }}'
@@ -915,25 +915,25 @@
       ansible.builtin.uri:
         url: "{{ platform_url }}/api/integrations/tokens?limit=10&page=1&sort=asc:apiKeyID&name=contains(Ansible%20token)"
         headers:
-          Authorization: "Bearer {{ tenant_token }}"
+          Authorization: "Bearer {{ tantor_agent_tenant_token }}"
           accept: "application/json, text/plain, */*"
         validate_certs: "{{ platform_validate_certs }}"
         method: "GET"
         return_content: true
         status_code: [200]
-      register: tokens_list_response
+      register: tantor_agent_tokens_list_response
       delegate_to: localhost
 
     - name: Delete installation tokens
       ansible.builtin.uri:
         url: "{{ platform_url }}/api/integrations/tokens/{{ item.apiKeyID }}"
         headers:
-          Authorization: "Bearer {{ tenant_token }}"
+          Authorization: "Bearer {{ tantor_agent_tenant_token }}"
           accept: "application/json, text/plain, */*"
         validate_certs: "{{ platform_validate_certs }}"
         method: "DELETE"
         status_code: [200, 204]
-      loop: "{{ tokens_list_response.json.results | selectattr('name', 'search', 'Ansible token') | list }}"
+      loop: "{{ tantor_agent_tokens_list_response.json.results | selectattr('name', 'search', 'Ansible token') | list }}"
       loop_control:
         label: "{{ item.apiKeyID }}"
       delegate_to: localhost
