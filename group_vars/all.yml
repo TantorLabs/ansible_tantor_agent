@@ -96,8 +96,11 @@ database_listen_address_settings: "*"
 # Block for DB and Patroni #
 ############################
 
-# Specify the vendor of installed database (choose from tantor or postgresql)
+# Specify the vendor of installed database (choose from tantor, pangolin or postgresql)
 database_vendor: ""
+
+# If database vendor is pangolin specify version
+database_pangolin_version: ""
 
 # If database vendor is tantor specify redaction (choose from be, se and se-1c )
 database_tantor_redaction: ""
