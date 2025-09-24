@@ -418,6 +418,7 @@
       systemctl list-units --type=service --state=active |
       grep --extended-regexp 'postgresql(@|(-|)){{ database_version }}(-|@|)|postgres(-|){{ database_version }}(-|@|)' |
       awk '{print $1}'
+    executable: /bin/bash
   register: tantor_agent_pg_service_name
   changed_when: false
 
@@ -439,10 +440,37 @@
     - name: Restart pangolin
       when:
         - database_managed_patroni is false
-        - listen_address_result.changed or pg_hba_result.changed
+        - tantor_agent_listen_address_result.changed or tantor_agent_pg_hba_result.changed
+      # noqa no-changed-when
       ansible.builtin.command:
         cmd: /usr/pangolin-{{ database_pangolin_version }}/bin/pg_ctl -D "{{ postgresql_pgdata.stdout }}" restart
       become_user: postgres
+      become: true
+
+# Draft block for postgrespro database
+- name: Block for PostgresPro
+  when:
+    - database_vendor == "postgrespro"
+    - database_managed_patroni is false
+  block:
+    - name: Collect installed PostgresPro version
+      # noqa command-instead-of-module
+      ansible.builtin.shell:
+        cmd: >
+          set -o pipefail &&
+          systemctl list-units --type=service --state=active |
+          grep --extended-regexp 'postgres.*-{{ database_version }}\.service' |
+          awk '{print $1}'
+        executable: /bin/bash
+      register: tantor_agent_pgpro_service_name
+      changed_when: false
+
+    - name: Restart DBMS PostgresPro
+      when:
+        - tantor_agent_listen_address_result.changed or tantor_agent_pg_hba_result.changed
+      ansible.builtin.systemd_service:
+        name: "{{ tantor_agent_pgpro_service_name.stdout.strip() }}"
+        state: restarted
 
 - name: Block for DB preparation patroni-managed DBMS
   when:
