@@ -26,7 +26,7 @@
   when: ansible_os_family in ("Debian", "Astra Linux")
 
 - name: Install package pmaagent
-  ansible.builtin.yum:
+  ansible.builtin.dnf:
     name: /tmp/pmaagent.rpm
     state: present
   notify: Restart pmaagent
